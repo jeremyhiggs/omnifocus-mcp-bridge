@@ -102,7 +102,11 @@ test("relocated release runs without dependencies and launchd references it", as
       }),
     ).toThrow();
     await expect(stat(launchLog)).rejects.toThrow();
-    await chmod(tokenPath, 0o600);
+    // The installer and installed launcher must both honor a relative .env token override.
+    await writeFile(path.join(release, "service-token"), await readFile(tokenPath), {
+      mode: 0o600,
+    });
+    await writeFile(path.join(release, ".env"), "OMNIFOCUS_MCP_TOKEN_FILE=service-token\n");
     execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
     const plist = await readFile(
       path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist"),
