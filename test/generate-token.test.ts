@@ -10,7 +10,7 @@ describe("token generation", () => {
   test("writes a private token to the default server token file", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "omnifocus-token-"));
 
-    const result = generateToken({ cwd: tempDir });
+    const result = generateToken({ homeDir: tempDir });
     const tokenFilePath = path.join(tempDir, DEFAULT_TOKEN_FILE);
     const token = await readFile(tokenFilePath, "utf8");
     const tokenStat = await stat(tokenFilePath);
@@ -25,17 +25,17 @@ describe("token generation", () => {
 
   test("refuses to overwrite an existing token without force", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "omnifocus-token-"));
-    generateToken({ cwd: tempDir });
+    generateToken({ homeDir: tempDir });
 
-    expect(() => generateToken({ cwd: tempDir })).toThrow(/already exists/);
+    expect(() => generateToken({ homeDir: tempDir })).toThrow(/already exists/);
   });
 
   test("rotates an existing token when force is enabled", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "omnifocus-token-"));
-    generateToken({ cwd: tempDir });
+    generateToken({ homeDir: tempDir });
     const firstToken = await readFile(path.join(tempDir, DEFAULT_TOKEN_FILE), "utf8");
 
-    const result = generateToken({ cwd: tempDir, force: true });
+    const result = generateToken({ homeDir: tempDir, force: true });
     const secondToken = await readFile(path.join(tempDir, DEFAULT_TOKEN_FILE), "utf8");
 
     expect(result.overwritten).toBe(true);
@@ -46,11 +46,11 @@ describe("token generation", () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "omnifocus-token-"));
     const tokenFilePath = path.join(tempDir, DEFAULT_TOKEN_FILE);
     await mkdir(path.dirname(tokenFilePath), { recursive: true });
-    generateToken({ cwd: tempDir });
+    generateToken({ homeDir: tempDir });
     await chmod(path.dirname(tokenFilePath), 0o755);
     await chmod(tokenFilePath, 0o644);
 
-    generateToken({ cwd: tempDir, force: true });
+    generateToken({ homeDir: tempDir, force: true });
     const tokenDirStat = await stat(path.dirname(tokenFilePath));
     const tokenStat = await stat(tokenFilePath);
 
@@ -66,7 +66,7 @@ describe("token generation", () => {
     await writeFile(targetPath, "do not replace\n");
     await symlink(targetPath, tokenFilePath);
 
-    expect(() => generateToken({ cwd: tempDir, force: true })).toThrow(/symbolic link/);
+    expect(() => generateToken({ homeDir: tempDir, force: true })).toThrow(/symbolic link/);
     await expect(readFile(targetPath, "utf8")).resolves.toBe("do not replace\n");
   });
 
@@ -74,5 +74,16 @@ describe("token generation", () => {
     expect(parseArgs([])).toEqual({});
     expect(parseArgs(["--force"])).toEqual({ force: true });
     expect(() => parseArgs(["--unknown"])).toThrow(/Usage:/);
+  });
+
+  test("refuses a symbolic link for the token directory without chmodding its target", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "omnifocus-token-"));
+    const tokenDir = path.dirname(path.join(tempDir, DEFAULT_TOKEN_FILE));
+    const targetPath = path.join(tempDir, "unrelated-directory");
+    await mkdir(path.dirname(tokenDir), { recursive: true });
+    await mkdir(targetPath, { mode: 0o755 });
+    await symlink(targetPath, tokenDir);
+    expect(() => generateToken({ homeDir: tempDir })).toThrow(/symbolic link/);
+    expect((await stat(targetPath)).mode & 0o777).toBe(0o755);
   });
 });

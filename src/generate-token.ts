@@ -3,7 +3,6 @@ import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   closeSync,
-  existsSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -13,11 +12,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { DEFAULT_TOKEN_FILE } from "./config.js";
+import { DEFAULT_TOKEN_FILE, loadConfig } from "./config.js";
 
 export type GenerateTokenOptions = {
-  cwd?: string;
+  homeDir?: string;
   force?: boolean;
 };
 
@@ -27,15 +27,18 @@ export type GenerateTokenResult = {
 };
 
 export function generateToken(options: GenerateTokenOptions = {}): GenerateTokenResult {
-  const cwd = options.cwd ?? process.cwd();
-  const tokenFilePath = path.resolve(cwd, DEFAULT_TOKEN_FILE);
+  const tokenFilePath = path.resolve(options.homeDir ?? homedir(), DEFAULT_TOKEN_FILE);
   const tokenDir = path.dirname(tokenFilePath);
   const token = `${randomBytes(32).toString("base64url")}\n`;
-  const exists = existsSync(tokenFilePath);
+  const tokenStat = lstatSync(tokenFilePath, { throwIfNoEntry: false });
+  const exists = tokenStat !== undefined;
 
   if (exists) {
-    const tokenStat = lstatSync(tokenFilePath);
-    if (tokenStat.isSymbolicLink() || !tokenStat.isFile()) {
+    if (
+      tokenStat.isSymbolicLink() ||
+      !tokenStat.isFile() ||
+      (process.getuid && tokenStat.uid !== process.getuid())
+    ) {
       throw new Error(`${DEFAULT_TOKEN_FILE} must be a regular file and not a symbolic link.`);
     }
   }
@@ -50,6 +53,10 @@ export function generateToken(options: GenerateTokenOptions = {}): GenerateToken
     recursive: true,
     mode: 0o700,
   });
+  const directory = lstatSync(tokenDir);
+  if (!directory.isDirectory() || (process.getuid && directory.uid !== process.getuid())) {
+    throw new Error("Token directory must be owned by the current user and not a symbolic link.");
+  }
   chmodSync(tokenDir, 0o700);
 
   const temporaryPath = `${tokenFilePath}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
@@ -93,6 +100,11 @@ export function parseArgs(args: string[]): GenerateTokenOptions {
 }
 
 export function run(args: string[] = process.argv.slice(2)): void {
+  if (args.length === 1 && args[0] === "--check") {
+    loadConfig();
+    console.error("MCP bearer token configuration and permissions validated.");
+    return;
+  }
   const result = generateToken(parseArgs(args));
   const action = result.overwritten ? "Rotated" : "Generated";
   console.error(`${action} MCP bearer token at ${result.tokenFilePath}`);

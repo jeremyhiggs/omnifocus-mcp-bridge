@@ -85,10 +85,8 @@ TAILSCALE_PATH="$(command -v tailscale)"
 LAUNCHER_PATH="$SERVICE_DIR/omnifocus-mcp-bridge.sh"
 SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
 
-if [ ! -f "$ROOT_DIR/.secrets/omnifocus-mcp-token" ]; then
-  echo "Missing release token file. Run: $ROOT_DIR/scripts/generate-token.sh" >&2
-  exit 1
-fi
+# Validate the same token configuration the service will use before changing launchd.
+(cd "$ROOT_DIR" && node dist/generate-token.js --check)
 
 mkdir -p "$HOME/Library/LaunchAgents" "$SERVICE_DIR" "$LOG_DIR"
 cp "$SOURCE_LAUNCHER_PATH" "$LAUNCHER_PATH"

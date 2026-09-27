@@ -1,9 +1,10 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, lstatSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { parse as parseDotenv } from "dotenv";
 import { resolveDefaultUpstream } from "./upstream.js";
 
-export const DEFAULT_TOKEN_FILE = ".secrets/omnifocus-mcp-token";
+export const DEFAULT_TOKEN_FILE = ".config/omnifocus-mcp-bridge/token";
 
 export type BridgeConfig = {
   token: string;
@@ -18,6 +19,7 @@ export type BridgeConfig = {
 
 export type ConfigLoadOptions = {
   cwd?: string;
+  homeDir?: string;
   verbose?: boolean;
 };
 
@@ -33,10 +35,10 @@ export function loadConfig(
   const cwd = options.cwd ?? process.cwd();
   const sources = loadEnvSources(env, cwd);
   const effectiveEnv = sources.env;
-  const token = resolveToken(effectiveEnv, sources.tokenFileBaseDir, cwd);
+  const token = resolveToken(effectiveEnv, sources.tokenFileBaseDir, options.homeDir ?? homedir());
   if (!token) {
     throw new Error(
-      `OMNIFOCUS_MCP_TOKEN, OMNIFOCUS_MCP_TOKEN_FILE, or ${DEFAULT_TOKEN_FILE} is required; refusing to start without bearer auth.`,
+      `OMNIFOCUS_MCP_TOKEN, OMNIFOCUS_MCP_TOKEN_FILE, or ~/${DEFAULT_TOKEN_FILE} is required; refusing to start without bearer auth.`,
     );
   }
 
@@ -97,7 +99,7 @@ function loadEnvFile(filePath: string, required: boolean): Record<string, string
 function resolveToken(
   env: NodeJS.ProcessEnv,
   tokenFileBaseDir: string,
-  cwd: string,
+  homeDir: string,
 ): string | undefined {
   const directToken = env.OMNIFOCUS_MCP_TOKEN?.trim();
   if (directToken) {
@@ -106,11 +108,21 @@ function resolveToken(
 
   const tokenFile = env.OMNIFOCUS_MCP_TOKEN_FILE?.trim();
   if (!tokenFile) {
-    const defaultTokenFilePath = path.resolve(cwd, DEFAULT_TOKEN_FILE);
-    if (!existsSync(defaultTokenFilePath)) {
+    const defaultTokenFilePath = path.resolve(homeDir, DEFAULT_TOKEN_FILE);
+    if (!lstatSync(defaultTokenFilePath, { throwIfNoEntry: false })) {
       return undefined;
     }
 
+    const directory = lstatSync(path.dirname(defaultTokenFilePath));
+    if (
+      !directory.isDirectory() ||
+      (directory.mode & 0o077) !== 0 ||
+      (process.getuid && directory.uid !== process.getuid())
+    ) {
+      throw new Error(
+        "Default token directory must be owned by the current user, not a symbolic link, and have mode 0700.",
+      );
+    }
     return readTokenFile(defaultTokenFilePath);
   }
 
@@ -127,10 +139,16 @@ function readTokenFile(tokenFilePath: string): string | undefined {
 }
 
 function assertPrivateFile(filePath: string): void {
-  const stat = statSync(filePath);
+  const stat = lstatSync(filePath);
 
   if (!stat.isFile()) {
-    throw new Error(`OMNIFOCUS_MCP_TOKEN_FILE must point to a regular file: ${filePath}`);
+    throw new Error(
+      `OMNIFOCUS_MCP_TOKEN_FILE must point to a regular file, not a symbolic link: ${filePath}`,
+    );
+  }
+
+  if (process.getuid && stat.uid !== process.getuid()) {
+    throw new Error("OMNIFOCUS_MCP_TOKEN_FILE must be owned by the current user.");
   }
 
   if ((stat.mode & 0o077) !== 0) {

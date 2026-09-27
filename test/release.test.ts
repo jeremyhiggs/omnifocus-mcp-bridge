@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createServer } from "node:net";
 import path from "node:path";
@@ -58,6 +58,9 @@ test("relocated release runs without dependencies and launchd references it", as
     );
 
     execFileSync(path.join(release, "scripts/generate-token.sh"), { env, cwd: temp });
+    const tokenPath = path.join(env.HOME, ".config/omnifocus-mcp-bridge/token");
+    expect((await stat(tokenPath)).mode & 0o777).toBe(0o600);
+    expect((await stat(path.dirname(tokenPath))).mode & 0o777).toBe(0o700);
     child = spawn(path.join(release, "scripts/run-server.sh"), { env, cwd: temp });
     const url = await waitForUrl(child);
     expect((await fetch(url)).status).toBe(401);
@@ -66,7 +69,7 @@ test("relocated release runs without dependencies and launchd references it", as
       new StreamableHTTPClientTransport(url, {
         requestInit: {
           headers: {
-            authorization: `Bearer ${(await readFile(path.join(release, ".secrets/omnifocus-mcp-token"), "utf8")).trim()}`,
+            authorization: `Bearer ${(await readFile(path.join(env.HOME, ".config/omnifocus-mcp-bridge/token"), "utf8")).trim()}`,
           },
         },
       }),
@@ -90,6 +93,16 @@ test("relocated release runs without dependencies and launchd references it", as
     child = undefined;
 
     // Mock launchctl confines installation to a temporary home; plutil still validates real XML.
+    await chmod(tokenPath, 0o644);
+    expect(() =>
+      execFileSync(path.join(release, "scripts/install-launch-agent.sh"), {
+        env,
+        cwd: temp,
+        stdio: "pipe",
+      }),
+    ).toThrow();
+    await expect(stat(launchLog)).rejects.toThrow();
+    await chmod(tokenPath, 0o600);
     execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
     const plist = await readFile(
       path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist"),

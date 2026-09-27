@@ -46,13 +46,13 @@ http://127.0.0.1:3050/mcp
 Clients must send:
 
 ```text
-Authorization: Bearer <contents of .secrets/omnifocus-mcp-token>
+Authorization: Bearer <contents of ~/.config/omnifocus-mcp-bridge/token>
 ```
 
 Smoke test:
 
 ```sh
-TOKEN="$(cat .secrets/omnifocus-mcp-token)"
+TOKEN="$(cat "$HOME/.config/omnifocus-mcp-bridge/token")"
 
 curl -i http://127.0.0.1:3050/mcp \
   -H "Authorization: Bearer $TOKEN" \
@@ -61,8 +61,8 @@ curl -i http://127.0.0.1:3050/mcp \
   --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
-`pnpm token:generate` writes `.secrets/omnifocus-mcp-token` with private
-permissions and does not print the token. Rotate it with:
+`pnpm token:generate` writes `~/.config/omnifocus-mcp-bridge/token` with mode
+`0600` in a directory with mode `0700` and does not print the token. Rotate it with:
 
 ```sh
 pnpm token:generate -- --force
@@ -93,16 +93,20 @@ From the release folder:
 ```
 
 These commands run prebuilt files directly with Node. The release build does
-not copy `.env` or `.secrets` from the checkout. Configure `.env` in the release
-folder if needed, generate its token, and use that token in your MCP client.
-Rebuilding an existing release preserves configuration and tokens created there.
+not copy `.env` or tokens from the checkout. Configure `.env` in the release
+folder if needed. Checkout, release scripts, and launchd share the token at
+`~/.config/omnifocus-mcp-bridge/token`, so rebuilding or relocating a release
+does not change client credentials. Rebuilding preserves the release configuration.
 
 ## Security
 
 - Bearer auth is required on every request.
 - The bridge refuses to start without `OMNIFOCUS_MCP_TOKEN`,
-  `OMNIFOCUS_MCP_TOKEN_FILE`, or `.secrets/omnifocus-mcp-token`.
-- Token files must be regular files and must not be group/world readable.
+  `OMNIFOCUS_MCP_TOKEN_FILE`, or `~/.config/omnifocus-mcp-bridge/token`.
+- Token files must be owned by the current user, be regular files rather than
+  symbolic links, and must not be group/world readable. The default token
+  directory must also be private and owned by the current user. Generation
+  sets directory mode `0700` and file mode `0600`.
 - The default bind host is `127.0.0.1`.
 - Read-only mode is enabled by default. Set `OMNIFOCUS_MCP_READ_ONLY=false` only
   when remote mutation is intended.
@@ -116,7 +120,7 @@ so shell, launchd, or service-manager env vars override `.env`.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OMNIFOCUS_MCP_TOKEN_FILE` | `.secrets/omnifocus-mcp-token` when present | Private file containing the bearer token. |
+| `OMNIFOCUS_MCP_TOKEN_FILE` | `~/.config/omnifocus-mcp-bridge/token` when present | Private file containing the bearer token. Relative overrides resolve from the env file directory; use an absolute path for a file under your home directory. |
 | `OMNIFOCUS_MCP_TOKEN` | none | Direct bearer token override. Avoid inline shell usage because it can leak through history. |
 | `OMNIFOCUS_MCP_ENV_FILE` | `.env` when present | Optional dotenv file path. If explicitly set, the file must exist. |
 | `OMNIFOCUS_MCP_HOST` | `127.0.0.1` | HTTP bind host. Keep this as `127.0.0.1` for Tailscale Serve mode. |
@@ -189,13 +193,14 @@ This renders `launchd/local.omnifocus-mcp-bridge.plist.template` to:
 
 If migrating from a previous installation of this service, uninstall
 it from the previous checkout before installing this service. Both use the same
-default port, installed launcher, and log directory. Generate a token in this
-checkout and update your client's credentials before switching services.
+default port, installed launcher, and log directory. The token now lives outside
+the release folder and is shared by all installations.
 
 The service runs an installed copy of the release's `scripts/omnifocus-mcp-bridge.sh`, so
 macOS Login Items show a named bridge entry instead of `pnpm`. The installed
 launcher lives outside `~/Documents` to avoid macOS background-item privacy
-restrictions. The plist points it at the release folder; startup runs Node
+restrictions. The installer validates token configuration and permissions before modifying
+launchd. The plist points it at the release folder; startup runs Node
 directly and never rebuilds or installs dependencies. Keep that folder in place,
 and reinstall the LaunchAgent if you move it. The launcher keeps the bridge
 alive and writes logs to:

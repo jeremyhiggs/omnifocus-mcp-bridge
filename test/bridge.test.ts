@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -36,9 +36,9 @@ describe("config", () => {
         {
           OMNIFOCUS_MCP_TOKEN: "",
         },
-        { cwd: tempDir },
+        { cwd: tempDir, homeDir: tempDir },
       ),
-    ).toThrow(/OMNIFOCUS_MCP_TOKEN, OMNIFOCUS_MCP_TOKEN_FILE, or \.secrets/);
+    ).toThrow(/OMNIFOCUS_MCP_TOKEN, OMNIFOCUS_MCP_TOKEN_FILE, or ~\/\.config/);
   });
 
   test("defaults remote access to read-only mode", () => {
@@ -93,10 +93,10 @@ describe("config", () => {
   test("loads bearer token from the default private token file without .env", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "omnifocus-bridge-"));
     const tokenPath = path.join(tempDir, DEFAULT_TOKEN_FILE);
-    await mkdir(path.dirname(tokenPath));
+    await mkdir(path.dirname(tokenPath), { recursive: true, mode: 0o700 });
     await writeFile(tokenPath, "default-file-token\n", { mode: 0o600 });
 
-    const config = loadConfig({}, { cwd: tempDir });
+    const config = loadConfig({}, { cwd: tmpdir(), homeDir: tempDir });
 
     expect(config.token).toBe("default-file-token");
     expect(config.host).toBe("127.0.0.1");
@@ -176,6 +176,20 @@ describe("config", () => {
         OMNIFOCUS_MCP_TOKEN_FILE: tokenPath,
       }),
     ).toThrow(/must not be group\/world readable/);
+  });
+
+  test("rejects a non-private default token directory and symbolic link token", async () => {
+    const homeDir = await mkdtemp(path.join(tmpdir(), "omnifocus-bridge-"));
+    const tokenPath = path.join(homeDir, DEFAULT_TOKEN_FILE);
+    await mkdir(path.dirname(tokenPath), { recursive: true, mode: 0o755 });
+    await writeFile(tokenPath, "test-token\n", { mode: 0o600 });
+    expect(() => loadConfig({}, { cwd: homeDir, homeDir })).toThrow(/mode 0700/);
+    await chmod(path.dirname(tokenPath), 0o700);
+    const linkPath = path.join(homeDir, "token-link");
+    await symlink(tokenPath, linkPath);
+    expect(() => loadConfig({ OMNIFOCUS_MCP_TOKEN_FILE: linkPath }, { cwd: homeDir })).toThrow(
+      /symbolic link/,
+    );
   });
 });
 
