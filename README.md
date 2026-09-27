@@ -25,7 +25,7 @@ What it does not do:
 ## Requirements
 
 - macOS with OmniFocus installed and automation access allowed
-- Node.js 22+
+- Node.js 24+
 - pnpm 11+ to develop or build a release; not needed to run a release
 - Tailscale, only if using `pnpm start:tailscale`
 
@@ -80,7 +80,7 @@ pnpm release
 The output is `release/omnifocus-mcp-bridge/`. Copy that entire folder to its
 permanent location. It includes the bundled bridge, bundled upstream server,
 OmniFocus scripts, launch scripts, and dependency license notices. Runtime needs
-Node.js 22+ and OmniFocus; it does not need pnpm, TypeScript, or `node_modules`.
+Node.js 24+ and OmniFocus; it does not need pnpm, TypeScript, or `node_modules`.
 Tailscale is required only for Tailscale Serve mode and the LaunchAgent.
 
 From the release folder:

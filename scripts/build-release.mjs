@@ -14,7 +14,7 @@ const options = {
   bundle: true,
   platform: "node",
   format: "esm",
-  target: "node22",
+  target: "node24",
   minify: true,
   metafile: true,
   legalComments: "eof",
@@ -103,4 +103,4 @@ for (const directory of [...packages].sort()) {
   for (const name of licenses) notices.push(await readFile(path.join(directory, name), "utf8"));
 }
 await writeFile(path.join(output, "THIRD_PARTY_NOTICES.txt"), notices.join("\n\n"));
-console.log(`Release ready: ${path.relative(root, output)} (Node.js 22+; no node_modules or pnpm)`);
+console.log(`Release ready: ${path.relative(root, output)} (Node.js 24+; no node_modules or pnpm)`);
