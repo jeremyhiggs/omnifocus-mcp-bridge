@@ -26,7 +26,7 @@ What it does not do:
 
 - macOS with OmniFocus installed and automation access allowed
 - Node.js 22+
-- pnpm 11+
+- pnpm 11+ to develop or build a release; not needed to run a release
 - Tailscale, only if using `pnpm start:tailscale`
 
 ## Quick Start
@@ -67,6 +67,35 @@ permissions and does not print the token. Rotate it with:
 ```sh
 pnpm token:generate -- --force
 ```
+
+## Release Folder
+
+Build a portable release from the checkout:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm release
+```
+
+The output is `release/omnifocus-mcp-bridge/`. Copy that entire folder to its
+permanent location. It includes the bundled bridge, bundled upstream server,
+OmniFocus scripts, launch scripts, and dependency license notices. Runtime needs
+Node.js 22+ and OmniFocus; it does not need pnpm, TypeScript, or `node_modules`.
+Tailscale is required only for Tailscale Serve mode and the LaunchAgent.
+
+From the release folder:
+
+```sh
+./scripts/generate-token.sh
+./scripts/run-server.sh
+# Or publish through Tailscale Serve:
+./scripts/run-tailscale.sh
+```
+
+These commands run prebuilt files directly with Node. The release build does
+not copy `.env` or `.secrets` from the checkout. Configure `.env` in the release
+folder if needed, generate its token, and use that token in your MCP client.
+Rebuilding an existing release preserves configuration and tokens created there.
 
 ## Security
 
@@ -134,7 +163,22 @@ Use a macOS LaunchAgent, not a LaunchDaemon, so OmniFocus automation runs in the
 logged-in user's GUI session.
 
 ```sh
+pnpm release
+./release/omnifocus-mcp-bridge/scripts/generate-token.sh
 pnpm launchd:install
+```
+
+`pnpm launchd:install` references `release/omnifocus-mcp-bridge/` by default.
+For a relocated release, install directly from its permanent location:
+
+```sh
+./scripts/install-launch-agent.sh
+```
+
+Alternatively, pass a release-folder path to the checkout's installer:
+
+```sh
+./scripts/install-launch-agent.sh /path/to/omnifocus-mcp-bridge
 ```
 
 This renders `launchd/local.omnifocus-mcp-bridge.plist.template` to:
@@ -148,10 +192,13 @@ it from the previous checkout before installing this service. Both use the same
 default port, installed launcher, and log directory. Generate a token in this
 checkout and update your client's credentials before switching services.
 
-The service runs an installed copy of `scripts/omnifocus-mcp-bridge.sh`, so
+The service runs an installed copy of the release's `scripts/omnifocus-mcp-bridge.sh`, so
 macOS Login Items show a named bridge entry instead of `pnpm`. The installed
 launcher lives outside `~/Documents` to avoid macOS background-item privacy
-restrictions, keeps the bridge alive, and writes logs to:
+restrictions. The plist points it at the release folder; startup runs Node
+directly and never rebuilds or installs dependencies. Keep that folder in place,
+and reinstall the LaunchAgent if you move it. The launcher keeps the bridge
+alive and writes logs to:
 
 ```text
 ~/Library/Logs/omnifocus-mcp-bridge/
@@ -172,7 +219,9 @@ pnpm launchd:uninstall
 
 ## Upstream Launch
 
-The upstream package is pinned in `package.json`. At runtime, the bridge:
+The upstream package is pinned in `package.json`. In a release, the bridge starts
+`upstream/dist/server.js` directly with the same Node executable. In a source
+checkout, it:
 
 1. resolves `omnifocus-mcp-enhanced/package.json`
 2. reads the package `bin` entry
@@ -246,7 +295,10 @@ pnpm run build
 ```
 
 Tests use a fake stdio MCP child process. They do not launch OmniFocus or call
-the real upstream package.
+OmniFocus automation. The release test also starts the bundled real upstream
+with a mock `osascript`, then checks relocated startup and LaunchAgent
+installation using a temporary home and mock `launchctl`/Tailscale commands.
 
 `pnpm start`, `pnpm start:tailscale`, and `pnpm token:generate` run
 `pnpm run build` before executing compiled output.
+Release scripts and the installed background launcher do not rebuild.

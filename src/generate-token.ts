@@ -8,6 +8,7 @@ import {
   mkdirSync,
   openSync,
   renameSync,
+  realpathSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -98,7 +99,7 @@ export function run(args: string[] = process.argv.slice(2)): void {
   console.error("Keep this file private; the token value was not printed.");
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     run();
   } catch (error: unknown) {

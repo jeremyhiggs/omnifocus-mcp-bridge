@@ -12,14 +12,15 @@ describe("runner scripts", () => {
     "run-tailscale.sh",
     "generate-token.sh",
     "omnifocus-mcp-bridge.sh",
-  ])("%s rebuilds before executing compiled output", async (scriptName) => {
+  ])("%s launches compiled output", async (scriptName) => {
     const script = await readFile(path.join(repoRoot, "scripts", scriptName), "utf8");
 
     if (scriptName === "run-tailscale.sh") {
+      expect(script).toContain('pnpm --dir "$ROOT_DIR" run build');
       expect(script).toContain('OMNIFOCUS_MCP_BRIDGE_ROOT="$ROOT_DIR"');
       expect(script).toContain("scripts/omnifocus-mcp-bridge.sh");
     } else if (scriptName === "omnifocus-mcp-bridge.sh") {
-      expect(script).toContain('pnpm --dir "$ROOT_DIR" run build');
+      expect(script).not.toContain("pnpm");
       expect(script).toContain('node "$ROOT_DIR/dist/tailscale-start.js"');
     } else {
       expect(script).toContain("pnpm run build");
@@ -63,6 +64,8 @@ describe("runner scripts", () => {
     );
 
     expect(script).toContain('LABEL="local.omnifocus-mcp-bridge"');
+    expect(script).toContain('ROOT_DIR="$ROOT_DIR/release/omnifocus-mcp-bridge"');
+    expect(script).not.toContain("require_command pnpm");
     expect(script).toContain(
       'SERVICE_DIR="$HOME/Library/Application Support/omnifocus-mcp-bridge"',
     );

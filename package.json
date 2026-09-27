@@ -20,7 +20,8 @@
     "start:tailscale": "scripts/run-tailscale.sh",
     "test": "vitest run",
     "token:generate": "scripts/generate-token.sh",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "release": "pnpm run build && node scripts/build-release.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.0",
     "@types/node": "24.0.7",
+    "esbuild": "0.25.12",
     "tsx": "4.20.3",
     "typescript": "5.8.3",
     "vitest": "3.2.6"

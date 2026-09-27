@@ -16,6 +16,4 @@ if [ -z "${OMNIFOCUS_MCP_TOKEN:-}" ] \
   export OMNIFOCUS_MCP_TOKEN_FILE="$ROOT_DIR/.secrets/omnifocus-mcp-token"
 fi
 
-pnpm --dir "$ROOT_DIR" run build
-
 exec node "$ROOT_DIR/dist/tailscale-start.js" "$@"

@@ -1,5 +1,7 @@
 import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -24,6 +26,15 @@ export type UpstreamConnection = {
 };
 
 export function resolveDefaultUpstream(): ResolvedUpstream {
+  const bundledBinPath = fileURLToPath(new URL("../upstream/dist/server.js", import.meta.url));
+  if (existsSync(bundledBinPath)) {
+    return {
+      command: process.execPath,
+      args: [bundledBinPath],
+      binPath: bundledBinPath,
+    };
+  }
+
   const packageJsonPath = require.resolve("omnifocus-mcp-enhanced/package.json");
   const packageJson = require(packageJsonPath) as PackageJson;
   const packageDir = path.dirname(packageJsonPath);
