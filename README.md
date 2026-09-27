@@ -313,10 +313,10 @@ pnpm audit --audit-level moderate
 ```
 
 The dependency audit workflow scans production and development dependencies on
-every pull request, pushes to `main`, and weekly on Monday at 02:37 UTC. It can
+every pull request, pushes to `main`, and daily at 00:00 UTC. It can
 also be started manually in GitHub Actions. Moderate-or-higher findings fail
 the check; registry errors are not ignored. The audit reads the lockfile without
 installing packages or running dependency build scripts.
 
-GitHub runs scheduled workflows from the default branch, so the weekly scan
+GitHub runs scheduled workflows from the default branch, so the daily scan
 starts once the workflow reaches `main`.
