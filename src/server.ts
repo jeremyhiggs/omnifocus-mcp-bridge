@@ -27,6 +27,7 @@ import { isBearerAuthorized, writeUnauthorized } from "./auth.js";
 import type { BridgeConfig } from "./config.js";
 import { canCallTool, filterToolsForPolicy } from "./policy.js";
 import type { UpstreamConnection } from "./upstream.js";
+import { BRIDGE_VERSION } from "./version.js";
 
 export type BridgeRuntime = {
   httpServer: HttpServer;
@@ -180,7 +181,7 @@ function createFacadeServer(upstream: Client, policy: { readOnly: boolean }): Se
   const server = new Server(
     {
       name: "omnifocus-mcp-bridge",
-      version: "0.1.0",
+      version: BRIDGE_VERSION,
     },
     {
       capabilities: capabilities as ServerCapabilities,

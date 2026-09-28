@@ -1,4 +1,5 @@
 import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,21 +44,6 @@ await cp(
   { recursive: true },
 );
 await cp(path.join(upstreamRoot, "package.json"), path.join(output, "upstream", "package.json"));
-await writeFile(
-  path.join(output, "package.json"),
-  `${JSON.stringify(
-    {
-      name: metadata.name,
-      version: metadata.version,
-      private: true,
-      type: "module",
-      engines: metadata.engines,
-    },
-    null,
-    2,
-  )}\n`,
-);
-
 await cp(path.join(root, "launchd"), path.join(output, "launchd"), { recursive: true });
 await mkdir(path.join(output, "scripts"), { recursive: true });
 for (const name of await readdir(path.join(root, "scripts"))) {
@@ -103,4 +89,28 @@ for (const directory of [...packages].sort()) {
   for (const name of licenses) notices.push(await readFile(path.join(directory, name), "utf8"));
 }
 await writeFile(path.join(output, "THIRD_PARTY_NOTICES.txt"), notices.join("\n\n"));
+const hash = createHash("sha256");
+for (const file of [
+  "dist/index.js",
+  "dist/tailscale-start.js",
+  "dist/generate-token.js",
+  "upstream/dist/server.js",
+]) {
+  hash.update(await readFile(path.join(output, file)));
+}
+await writeFile(
+  path.join(output, "package.json"),
+  `${JSON.stringify(
+    {
+      name: metadata.name,
+      version: metadata.version,
+      buildId: hash.digest("hex").slice(0, 12),
+      private: true,
+      type: "module",
+      engines: metadata.engines,
+    },
+    null,
+    2,
+  )}\n`,
+);
 console.log(`Release ready: ${path.relative(root, output)} (Node.js 24+; no node_modules or pnpm)`);

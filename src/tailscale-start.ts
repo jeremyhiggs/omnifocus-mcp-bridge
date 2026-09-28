@@ -12,8 +12,13 @@ import {
   TAILSCALE_SERVE_PATH,
 } from "./tailscale.js";
 import { connectUpstream } from "./upstream.js";
+import { BRIDGE_VERSION } from "./version.js";
 
 export async function run(args: string[] = process.argv.slice(2)): Promise<void> {
+  if (args.length === 1 && args[0] === "--version") {
+    console.log(BRIDGE_VERSION);
+    return;
+  }
   const runtimeArgs = parseRuntimeArgs(args);
   const config = loadConfig(process.env, {
     verbose: runtimeArgs.verbose,
@@ -31,7 +36,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
   registerTailscaleServe(runtime);
 
   console.error(
-    `omnifocus-mcp-bridge local=${runtime.url.href} readOnly=${String(config.readOnly)} verbose=${String(config.verbose)} upstreamBin=${config.upstreamBinPath}`,
+    `omnifocus-mcp-bridge local=${runtime.url.href} version=${BRIDGE_VERSION} readOnly=${String(config.readOnly)} verbose=${String(config.verbose)} upstreamBin=${config.upstreamBinPath}`,
   );
   console.error(
     `tailscale serve path=${TAILSCALE_SERVE_PATH} command=tailscale ${serveArgs.join(" ")}`,

@@ -20,6 +20,18 @@ test("relocated release runs without dependencies and launchd references it", as
   let client: Client | undefined;
   try {
     execFileSync(process.execPath, ["scripts/build-release.mjs", release], { cwd: root });
+    const metadata = JSON.parse(await readFile(path.join(release, "package.json"), "utf8"));
+    const version = `${metadata.version}+${metadata.buildId}`;
+    expect(metadata.buildId).toMatch(/^[0-9a-f]{12}$/);
+    for (const entry of ["index.js", "tailscale-start.js"]) {
+      expect(
+        execFileSync(process.execPath, [path.join(release, "dist", entry), "--version"], {
+          cwd: temp,
+        })
+          .toString()
+          .trim(),
+      ).toBe(version);
+    }
     await mkdir(bin);
     expect(await readdir(release)).not.toContain("node_modules");
     expect(await readdir(release)).not.toContain(".secrets");
@@ -74,6 +86,7 @@ test("relocated release runs without dependencies and launchd references it", as
         },
       }),
     );
+    expect(client.getServerVersion()?.version).toBe(version);
     expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("dump_database");
     expect((await client.callTool({ name: "dump_database", arguments: {} })).isError).not.toBe(
       true,

@@ -83,6 +83,17 @@ OmniFocus scripts, launch scripts, and dependency license notices. Runtime needs
 Node.js 24+ and OmniFocus; it does not need pnpm, TypeScript, or `node_modules`.
 Tailscale is required only for Tailscale Serve mode and the LaunchAgent.
 
+Check a release's version without starting the bridge:
+
+```sh
+node release/omnifocus-mcp-bridge/dist/index.js --version
+```
+
+The version combines `package.json`'s version with a short hash of the bundled
+JavaScript. The running bridge reports the same value in its startup log and
+MCP `serverInfo.version`. Compare it with a newly built release to see whether
+the running code needs updating.
+
 From the release folder:
 
 ```sh

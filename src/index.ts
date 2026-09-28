@@ -5,8 +5,13 @@ import { loadConfig } from "./config.js";
 import { parseRuntimeArgs } from "./runtime-args.js";
 import { startBridge } from "./server.js";
 import { connectUpstream } from "./upstream.js";
+import { BRIDGE_VERSION } from "./version.js";
 
 export async function run(args: string[] = process.argv.slice(2)): Promise<void> {
+  if (args.length === 1 && args[0] === "--version") {
+    console.log(BRIDGE_VERSION);
+    return;
+  }
   const runtimeArgs = parseRuntimeArgs(args);
   const config = loadConfig(process.env, {
     verbose: runtimeArgs.verbose,
@@ -15,7 +20,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
   const runtime = await startBridge(config, upstream);
 
   console.error(
-    `omnifocus-mcp-bridge listening on ${runtime.url.href} readOnly=${String(config.readOnly)} verbose=${String(config.verbose)} upstreamBin=${config.upstreamBinPath}`,
+    `omnifocus-mcp-bridge listening on ${runtime.url.href} version=${BRIDGE_VERSION} readOnly=${String(config.readOnly)} verbose=${String(config.verbose)} upstreamBin=${config.upstreamBinPath}`,
   );
 
   let shuttingDown = false;
