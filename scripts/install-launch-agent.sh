@@ -84,14 +84,12 @@ bootstrap_launch_agent() {
 }
 
 require_command node
-require_command tailscale
 require_command launchctl
 require_command plutil
 
 NODE_PATH="$(command -v node)"
-TAILSCALE_PATH="$(command -v tailscale)"
 LAUNCHER_PATH="$SERVICE_DIR/omnifocus-mcp-bridge.sh"
-SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
+SERVICE_PATH="$(dirname "$NODE_PATH"):$PATH"
 case "$CONFIG_HOME" in
   /*) ;;
   *) echo "XDG_CONFIG_HOME must be an absolute path." >&2; exit 1 ;;
@@ -154,8 +152,13 @@ fi
 
 TEMPLATE="$ROOT_DIR/launchd/$LABEL.plist.template"
 SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/omnifocus-mcp-bridge.sh"
-# Validate with the same environment the LaunchAgent will receive.
-(cd "$ROOT_DIR" && env -i HOME="$HOME" PATH="$SERVICE_PATH" XDG_CONFIG_HOME="$CONFIG_HOME" node dist/generate-token.js --check)
+# Validate and choose the mode from the installed agent's working directory.
+TAILSCALE_SERVE="$(cd "$SERVICE_DIR" && env -i HOME="$HOME" PATH="$SERVICE_PATH" XDG_CONFIG_HOME="$CONFIG_HOME" node "$ROOT_DIR/dist/generate-token.js" --check-launch-agent)"
+if [ "$TAILSCALE_SERVE" = "true" ]; then
+  require_command tailscale
+  TAILSCALE_PATH="$(command -v tailscale)"
+  SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
+fi
 render_template > "$ROOT_DIR/launch-agent.plist"
 plutil -lint "$ROOT_DIR/launch-agent.plist" >/dev/null
 NEW_CONFIG=""

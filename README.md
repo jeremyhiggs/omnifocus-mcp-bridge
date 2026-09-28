@@ -1,322 +1,234 @@
-# omnifocus-mcp-bridge
+# OmniFocus MCP bridge
 
-Authenticated Streamable HTTP bridge for
-[`omnifocus-mcp-enhanced`](https://github.com/jqlts1/omnifocus-mcp-enhanced).
+Run OmniFocus MCP tools over authenticated HTTP on your Mac. The bridge starts
+the pinned [`omnifocus-mcp-enhanced`](https://github.com/jqlts1/omnifocus-mcp-enhanced)
+server locally over stdio and exposes it at `http://127.0.0.1:3050/mcp`.
+It requires a bearer token and exposes read-only tools by default. Tailscale
+Serve is optional; the LaunchAgent stays local unless you enable it.
 
-Use this when an MCP client needs remote access to OmniFocus on your Mac. The
-upstream OmniFocus MCP server is a local stdio process; this repo wraps it in a
-small authenticated Streamable HTTP server.
+## First-time setup
 
-What it does:
-
-- installs the published `omnifocus-mcp-enhanced` package as a pinned dependency
-- launches that package locally as a child stdio MCP process
-- exposes MCP over HTTP at `/mcp`
-- requires Bearer auth on every request
-- defaults to read-only tool exposure
-- optionally publishes the bridge through Tailscale Serve at `/omnifocus-mcp`
-
-What it does not do:
-
-- it does not import upstream server internals
-- it does not require the upstream repo to become a monorepo
-- it does not make OmniFocus itself remote; OmniFocus stays on the Mac
-
-## Requirements
-
-- macOS with OmniFocus installed and automation access allowed
-- Node.js 24+
-- pnpm 11+ to develop or build a release; not needed to run a release
-- Tailscale, only if using `pnpm start:tailscale`
-
-## Quick Start
+You need macOS with OmniFocus installed and automation access allowed, Node.js
+24+, and pnpm 11.28.0 to build. Tailscale is needed only if you enable Serve.
+Run these commands from the checkout:
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 pnpm token:generate
-pnpm start
+pnpm release
 ```
 
-Default local endpoint:
+Run `pnpm token:generate` only if this is a new installation. It creates a
+token in `${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/token` without
+printing it. If that file already exists, keep it so existing clients retain
+their credentials. The config directory has mode `0700`; the token file has
+mode `0600`.
+
+To make the LaunchAgent available through your tailnet, install and connect
+Tailscale, then create or edit
+`${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/config.env` **before**
+installing the agent:
+
+```dotenv
+OMNIFOCUS_MCP_TAILSCALE_SERVE=true
+```
+
+Keep `config.env` at mode `0600` and its directory at `0700`. You do not need
+`config.env` for a local-only installation. The installer requires the
+`tailscale` command only when Serve is enabled.
+
+Install and start the background service:
+
+```sh
+pnpm launchd:install
+launchctl print "gui/$(id -u)/local.omnifocus-mcp-bridge"
+```
+
+The installer copies the standalone release into
+`~/Library/Application Support/omnifocus-mcp-bridge/releases/` and starts the
+LaunchAgent from that copy. It validates the private configuration before
+switching agents and removes older installed releases only after the new agent
+is running. The installed service needs Node.js, but neither pnpm nor
+`node_modules`.
+
+## Connect a client
+
+For a client on the Mac, use:
 
 ```text
 http://127.0.0.1:3050/mcp
 ```
 
-Clients must send:
-
-```text
-Authorization: Bearer <contents of ~/.config/omnifocus-mcp-bridge/token>
-```
-
-Smoke test:
-
-```sh
-TOKEN="$(cat "$HOME/.config/omnifocus-mcp-bridge/token")"
-
-curl -i http://127.0.0.1:3050/mcp \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-```
-
-`pnpm token:generate` writes `~/.config/omnifocus-mcp-bridge/token` with mode
-`0600` in a directory with mode `0700` and does not print the token. Rotate it with:
-
-```sh
-pnpm token:generate -- --force
-```
-
-## Release Folder
-
-Build a portable release from the checkout:
-
-```sh
-pnpm install --frozen-lockfile
-pnpm release
-```
-
-The outputs are `release/omnifocus-mcp-bridge/` and
-`release/omnifocus-mcp-bridge.tar.gz`. The archive includes the bundled bridge,
-bundled upstream server, OmniFocus scripts, launch scripts, and dependency
-license notices. Runtime needs
-Node.js 24+ and OmniFocus; it does not need pnpm, TypeScript, or `node_modules`.
-Tailscale is required only for Tailscale Serve mode and the LaunchAgent.
-The archive uses an explicit file list and contains no `.env`, tokens, or
-`.secrets`. A local `.env` in the release folder survives rebuilds.
-
-Check a release's version without starting the bridge:
-
-```sh
-node release/omnifocus-mcp-bridge/dist/index.js --version
-```
-
-The version combines `package.json`'s version with a short hash of the bundled
-JavaScript. The running bridge reports the same value in its startup log and
-MCP `serverInfo.version`. Compare it with a newly built release to see whether
-the running code needs updating.
-
-From the release folder:
-
-```sh
-./scripts/generate-token.sh
-./scripts/run-server.sh
-# Or publish through Tailscale Serve:
-./scripts/run-tailscale.sh
-```
-
-These commands run prebuilt files directly with Node. The release build does
-not copy `.env` or tokens from the checkout. Direct runs can use a local `.env`.
-All runs use the private user configuration under
-`${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/`; rebuilding or
-relocating a release does not change its token or LaunchAgent settings.
-
-## Security
-
-- Bearer auth is required on every request.
-- The bridge refuses to start without `OMNIFOCUS_MCP_TOKEN`,
-  `OMNIFOCUS_MCP_TOKEN_FILE`, or `~/.config/omnifocus-mcp-bridge/token`.
-- The config directory must be owned by the current user and have mode `0700`.
-  `config.env` and token files must be regular, user-owned files with mode `0600`.
-  Symlinks are rejected.
-- The default bind host is `127.0.0.1`.
-- Read-only mode is enabled by default. Set `OMNIFOCUS_MCP_READ_ONLY=false` only
-  when remote mutation is intended.
-- The upstream OmniFocus server stays local to the Mac and is launched over
-  stdio; no upstream internals are imported.
-
-## Configuration
-
-Settings load from `$XDG_CONFIG_HOME/omnifocus-mcp-bridge/config.env`, or
-`~/.config/omnifocus-mcp-bridge/config.env` if XDG_CONFIG_HOME is unset.
-For direct runs, a local `.env` overrides `config.env`; process environment
-values override both. The LaunchAgent uses only `config.env` and its plist
-environment. Create the private directory and file with:
-
-```sh
-mkdir -p -m 700 "${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge"
-touch "${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/config.env"
-chmod 600 "${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/config.env"
-```
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `OMNIFOCUS_MCP_TOKEN_FILE` | User config directory `token` when present | Private file containing the bearer token. Relative paths in `config.env` resolve from the config directory; relative paths in `.env` resolve from that file's directory. |
-| `OMNIFOCUS_MCP_TOKEN` | none | Direct bearer token override. Avoid inline shell usage because it can leak through history. |
-| `OMNIFOCUS_MCP_ENV_FILE` | `.env` when present | Optional dotenv file path. If explicitly set, the file must exist. |
-| `OMNIFOCUS_MCP_HOST` | `127.0.0.1` | HTTP bind host. Keep this as `127.0.0.1` for Tailscale Serve mode. |
-| `OMNIFOCUS_MCP_PORT` | `3050` | HTTP bind port. |
-| `OMNIFOCUS_MCP_READ_ONLY` | `true` | Set to `false` to expose mutating upstream tools. |
-| `OMNIFOCUS_MCP_VERBOSE` | `false` | Set to `true` for redacted request logs. |
-| `OMNIFOCUS_MCP_UPSTREAM_COMMAND` | Node executable | Optional override for the stdio upstream command. |
-| `OMNIFOCUS_MCP_UPSTREAM_ARGS` | resolved dependency bin path | Optional override args. Supports JSON arrays or shell-like quoted strings. |
-
-To expose plain HTTP on a trusted LAN, set `OMNIFOCUS_MCP_HOST=0.0.0.0`. This is
-not HTTPS; prefer Tailscale Serve for remote access.
-
-## Tailscale Serve
-
-For tailnet HTTPS:
-
-```sh
-pnpm start:tailscale
-```
-
-This starts the bridge on `127.0.0.1:${OMNIFOCUS_MCP_PORT:-3050}` and registers a
-persistent background Tailscale Serve route. With the default port, the Serve
-command is:
-
-```sh
-tailscale serve --bg --set-path /omnifocus-mcp http://127.0.0.1:3050/mcp
-```
-
-Remote endpoint:
+When Serve is enabled, run `tailscale serve status` and use the shown tailnet
+hostname with `/omnifocus-mcp`:
 
 ```text
 https://<mac-name>.<tailnet>.ts.net/omnifocus-mcp
 ```
 
-The wrapper accepts an existing `/omnifocus-mcp` route when it already points to
-the expected local bridge. It refuses to overwrite a route pointing elsewhere,
-leaves unrelated Serve routes alone, and does not run `tailscale serve reset`.
-Tailscale Serve mode requires a fixed port; `OMNIFOCUS_MCP_PORT=0` is rejected
-because a persistent route must keep the same local target across restarts.
-
-## Run in the Background
-
-Use a macOS LaunchAgent, not a LaunchDaemon, so OmniFocus automation runs in the
-logged-in user's GUI session.
-
-```sh
-pnpm release
-./release/omnifocus-mcp-bridge/scripts/generate-token.sh
-pnpm launchd:install
-```
-
-`pnpm launchd:install` copies `release/omnifocus-mcp-bridge/` into
-`~/Library/Application Support/omnifocus-mcp-bridge/releases/` and runs the
-LaunchAgent from that copy. For an extracted archive, install from its folder:
-
-```sh
-./scripts/install-launch-agent.sh
-```
-
-Alternatively, pass a release-folder path to the checkout's installer:
-
-```sh
-./scripts/install-launch-agent.sh /path/to/omnifocus-mcp-bridge
-```
-
-This renders `launchd/local.omnifocus-mcp-bridge.plist.template` to:
+Both endpoints require the same header:
 
 ```text
-~/Library/LaunchAgents/local.omnifocus-mcp-bridge.plist
+Authorization: Bearer <contents of ~/.config/omnifocus-mcp-bridge/token>
 ```
 
-The installer never copies `.env` into an installed release. On migration, if
-`config.env` does not exist, it copies the previous installation's `.env` (or
-the source release's `.env`) into the user config directory with mode `0600`.
-Migration requires absolute token-file paths and rejects inline tokens; move
-either into a separate private file before installing. Existing `config.env` is
-left untouched. Once the new agent
-reports running, older installed releases are removed.
-
-The service runs an installed copy of the release's `scripts/omnifocus-mcp-bridge.sh`, so
-macOS Login Items show a named bridge entry instead of `pnpm`. The installed
-launcher lives outside `~/Documents` to avoid macOS background-item privacy
-restrictions. The installer validates token configuration and permissions in
-the new copy before modifying launchd. The plist points at that installed copy;
-startup runs Node directly and never rebuilds or installs dependencies. The
-launcher keeps the bridge alive and writes logs to:
-
-```text
-~/Library/Logs/omnifocus-mcp-bridge/
-```
-
-Check status:
+If you use `XDG_CONFIG_HOME`, read the token from that directory instead. An
+unauthenticated request to either endpoint should return HTTP `401`; this is
+a quick way to confirm the route reaches the bridge without exposing a token:
 
 ```sh
-launchctl print "gui/$(id -u)/local.omnifocus-mcp-bridge"
+curl -i http://127.0.0.1:3050/mcp
+```
+
+The local endpoint works whether Serve is enabled or not. Read-only mode is on
+by default. Set `OMNIFOCUS_MCP_READ_ONLY=false` in private `config.env` only
+if clients should be able to change OmniFocus data.
+
+## Foreground runs
+
+Stop the LaunchAgent first if it already uses port 3050. Then run one of:
+
+```sh
+pnpm start            # local only, regardless of config.env
+pnpm start:tailscale  # register Serve, regardless of config.env
+```
+
+Both commands build before starting. Serve uses the fixed `/omnifocus-mcp`
+path and requires a nonzero local port. It accepts an existing route to this
+bridge, refuses to overwrite a different target, and leaves unrelated Serve
+routes alone.
+
+Disabling `OMNIFOCUS_MCP_TAILSCALE_SERVE` stops registration on future agent
+starts. A background Serve route already registered with `--bg` persists until
+you remove it. To remove **only** this path, then check the remaining routes:
+
+```sh
+tailscale serve --https=443 --set-path=/omnifocus-mcp off
+tailscale serve status
+```
+
+Do not use `tailscale serve reset` when other routes are configured. See
+[Tailscale's Serve CLI reference](https://tailscale.com/docs/reference/tailscale-cli/serve#disable-tailscale-serve).
+
+## Configuration and security
+
+The user config file is `$XDG_CONFIG_HOME/omnifocus-mcp-bridge/config.env`,
+defaulting to `~/.config/omnifocus-mcp-bridge/config.env`. A direct run loads
+that file first, then a local `.env`, then process environment values; later
+values win. The installed LaunchAgent has no `.env` and reads from its own
+working directory, so a checkout `.env` does not affect it. The installer
+records `XDG_CONFIG_HOME` in the LaunchAgent for custom config locations.
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `OMNIFOCUS_MCP_HOST` | `127.0.0.1` | HTTP bind address. Serve requires `127.0.0.1` or `localhost`. |
+| `OMNIFOCUS_MCP_PORT` | `3050` | Local HTTP port. Serve requires a fixed, nonzero port. |
+| `OMNIFOCUS_MCP_READ_ONLY` | `true` | Set to `false` to expose mutating tools. |
+| `OMNIFOCUS_MCP_TAILSCALE_SERVE` | `false` | Register `/omnifocus-mcp` on LaunchAgent startup. |
+| `OMNIFOCUS_MCP_VERBOSE` | `false` | Enable redacted request logs. |
+| `OMNIFOCUS_MCP_TOKEN_FILE` | User-config `token` file | Override the private bearer-token file. |
+| `OMNIFOCUS_MCP_TOKEN` | unset | Direct token override; avoid typing tokens into shell history. |
+| `OMNIFOCUS_MCP_ENV_FILE` | local `.env` when present | Select another direct-run dotenv file; an explicit path must exist. |
+| `OMNIFOCUS_MCP_UPSTREAM_COMMAND` | Node.js | Override the stdio upstream command for testing. |
+| `OMNIFOCUS_MCP_UPSTREAM_ARGS` | Bundled upstream entry point | Override arguments using a JSON array or shell-like quoted string. |
+
+The config directory must be owned by the current user with mode `0700`.
+`config.env` and token files must be regular, user-owned files with mode
+`0600`; symlinks are rejected. Relative token paths in `config.env` resolve
+beside that file, while paths in a local `.env` resolve beside the local file.
+The bridge refuses to start without a token. Tailscale access does not replace
+bearer authentication.
+
+To create an optional config file with the required permissions:
+
+```sh
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge"
+mkdir -p -m 700 "$CONFIG_DIR"
+touch "$CONFIG_DIR/config.env"
+chmod 700 "$CONFIG_DIR"
+chmod 600 "$CONFIG_DIR/config.env"
+```
+
+The upstream server stays local to the Mac. The bridge imports no upstream
+internals. Binding plain HTTP to a LAN address is possible with
+`OMNIFOCUS_MCP_HOST=0.0.0.0`, but it is not HTTPS; prefer loopback with
+Tailscale Serve for remote access.
+
+In read-only mode, the exposed tools are `dump_database`, `get_task_by_id`,
+`read_task_attachment`, `get_tasks`, `filter_tasks`, `get_projects`,
+`manage_perspectives` (`list` and `get` only), and `count_tasks`. Known and
+unknown mutating tools are blocked. Custom-perspective task reads use
+`get_tasks` with `source: "custom"`; task IDs are returned in structured
+output.
+
+## Releases and updates
+
+`pnpm release` builds `release/omnifocus-mcp-bridge/` and
+`release/omnifocus-mcp-bridge.tar.gz`. The archive includes the bundled bridge,
+upstream server, launch scripts, and dependency license notices. It excludes
+`.env`, token files, `.secrets`, and `node_modules`. A local `.env` placed in
+the release folder survives rebuilds for direct runs, but is never copied into
+an installed release.
+
+After building a new release, run `pnpm launchd:install` again to update the
+background service. Compare these versions to see whether the installed agent
+needs updating:
+
+```sh
+node release/omnifocus-mcp-bridge/dist/index.js --version
 pnpm launchd:logs
 ```
 
-Uninstall:
+The version combines `package.json`'s version with a short hash of the
+bundled JavaScript. The running version appears in the startup log and MCP
+`serverInfo.version`.
+
+An extracted archive can be run directly with Node from its folder:
 
 ```sh
+./scripts/generate-token.sh # only if no token exists yet
+./scripts/run-server.sh
+# Or: ./scripts/run-tailscale.sh
+```
+
+Install an extracted archive with `./scripts/install-launch-agent.sh`, or
+pass its folder to the checkout's installer. On migration, if `config.env`
+does not exist, the installer copies a previous release's `.env` (or the
+source release's `.env`) into the private user config directory. It rejects
+inline tokens and release-local token paths; move those tokens to a separate
+private file before installing. Existing `config.env` is left untouched.
+
+The LaunchAgent plist is
+`~/Library/LaunchAgents/local.omnifocus-mcp-bridge.plist`. The launcher and
+release live outside `~/Documents` to avoid macOS background-item privacy
+restrictions. The launcher runs Node directly and does not rebuild or install
+dependencies.
+
+## Troubleshooting
+
+Read the agent logs or uninstall it with:
+
+```sh
+pnpm launchd:logs
 pnpm launchd:uninstall
 ```
 
-## Upstream Launch
-
-The upstream package is pinned in `package.json`. In a release, the bridge starts
-`upstream/dist/server.js` directly with the same Node executable. In a source
-checkout, it:
-
-1. resolves `omnifocus-mcp-enhanced/package.json`
-2. reads the package `bin` entry
-3. starts `node <resolved-bin-path>` as a child stdio MCP process
-
-Override launch only when testing a different stdio server:
-
-```sh
-OMNIFOCUS_MCP_UPSTREAM_COMMAND=node \
-OMNIFOCUS_MCP_UPSTREAM_ARGS='["/absolute/path/to/custom/server.js"]' \
-pnpm start
-```
-
-## Read-Only Mode
-
-When `OMNIFOCUS_MCP_READ_ONLY` is unset or true, only these tools are exposed:
-
-- `dump_database`
-- `get_task_by_id`
-- `read_task_attachment`
-- `get_tasks`
-- `filter_tasks`
-- `get_projects`
-- `manage_perspectives` (`list` and `get` only)
-- `count_tasks`
-
-In the pinned upstream package, custom-perspective task reads use
-`get_tasks` with `source: "custom"`; task IDs are returned in structured output.
-
-Known and unknown mutating tools are blocked in read-only mode.
-
-## Diagnostics
-
-Enable redacted request logs:
-
-```sh
-pnpm start:tailscale -- --verbose
-```
-
-or:
-
-```sh
-OMNIFOCUS_MCP_VERBOSE=true pnpm start:tailscale
-```
-
-Verbose logs include method, path, status, duration, remote address,
-forwarded-for, user agent, content type, accept header, whether an Authorization
-header was present, and whether bearer auth passed. They do not include bearer
-tokens or request bodies.
-
-If a client gets `502 Bad Gateway` and no bridge request log appears, the request
-did not reach the bridge. Check:
+To enable redacted request logs, set `OMNIFOCUS_MCP_VERBOSE=true` in the
+private config file and reinstall, or add `--verbose` to a foreground run.
+Logs include request metadata and authorization success, but never tokens or
+request bodies. A logged `401` means the request reached the bridge without
+a valid token. A `502` with no bridge request log suggests the request did not
+reach the bridge. Check the Serve route and local listener:
 
 ```sh
 tailscale serve status --json
 lsof -nP -iTCP:3050 -sTCP:LISTEN
 ```
 
-If the bridge logs `statusCode:401`, the request reached the bridge but the
-token was missing or invalid.
-
 ## Development
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run format:check
 pnpm run lint
 pnpm run typecheck
@@ -324,29 +236,29 @@ pnpm test
 pnpm run build
 ```
 
-Tests use a fake stdio MCP child process. They do not launch OmniFocus or call
-OmniFocus automation. The release test also starts the bundled real upstream
-with a mock `osascript`, then checks relocated startup and LaunchAgent
-installation using a temporary home and mock `launchctl`/Tailscale commands.
+The source checkout resolves the pinned upstream package's `bin` entry and
+starts it as a child stdio MCP process. A release starts its bundled
+`upstream/dist/server.js` with the same Node executable. To test another
+stdio server:
 
-`pnpm start`, `pnpm start:tailscale`, and `pnpm token:generate` run
-`pnpm run build` before executing compiled output.
-Release scripts and the installed background launcher do not rebuild.
+```sh
+OMNIFOCUS_MCP_UPSTREAM_COMMAND=node \
+OMNIFOCUS_MCP_UPSTREAM_ARGS='["/absolute/path/to/custom/server.js"]' \
+pnpm start
+```
 
-## Dependency Checks
+Tests use a fake stdio MCP process. The release test starts the bundled real
+upstream with a mock `osascript` and checks relocation and installation with
+a temporary home and mock `launchctl` and Tailscale commands.
 
-Check available updates and known vulnerabilities locally:
+To check dependency updates and vulnerabilities:
 
 ```sh
 pnpm outdated
 pnpm audit --audit-level moderate
 ```
 
-The dependency audit workflow scans production and development dependencies on
-every pull request, pushes to `main`, and daily at 00:00 UTC. It can
-also be started manually in GitHub Actions. Moderate-or-higher findings fail
-the check; registry errors are not ignored. The audit reads the lockfile without
-installing packages or running dependency build scripts.
-
-GitHub runs scheduled workflows from the default branch, so the daily scan
-starts once the workflow reaches `main`.
+CI runs formatting, lint, typecheck, tests, and release builds on pull
+requests. Dependency audits run on pull requests, pushes to `main`, and daily
+at 00:00 UTC. Moderate-or-higher findings fail the audit; registry errors
+are not ignored. Scheduled workflows start from the default branch.

@@ -18,6 +18,7 @@ describe("runner scripts", () => {
     if (scriptName === "run-tailscale.sh") {
       expect(script).toContain('pnpm --dir "$ROOT_DIR" run build');
       expect(script).toContain('OMNIFOCUS_MCP_BRIDGE_ROOT="$ROOT_DIR"');
+      expect(script).toContain("OMNIFOCUS_MCP_TAILSCALE_SERVE=true");
       expect(script).toContain("scripts/omnifocus-mcp-bridge.sh");
     } else if (scriptName === "omnifocus-mcp-bridge.sh") {
       expect(script).not.toContain("pnpm");

@@ -127,6 +127,10 @@ export function run(args: string[] = process.argv.slice(2)): void {
     console.error("MCP bearer token configuration and permissions validated.");
     return;
   }
+  if (args.length === 1 && args[0] === "--check-launch-agent") {
+    console.log(loadConfig().tailscaleServe);
+    return;
+  }
   const result = generateToken(parseArgs(args));
   const action = result.overwritten ? "Rotated" : "Generated";
   console.error(`${action} MCP bearer token at ${result.tokenFilePath}`);

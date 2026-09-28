@@ -1,8 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chmod, mkdir, mkdtemp, writeFile, symlink } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { DEFAULT_TOKEN_FILE, loadConfig } from "../src/config.js";
@@ -28,6 +28,14 @@ afterEach(async () => {
 });
 
 describe("config", () => {
+  let isolatedHome: string;
+  beforeAll(async () => {
+    isolatedHome = await mkdtemp(path.join(tmpdir(), "omnifocus-config-tests-"));
+  });
+  afterAll(async () => {
+    await rm(isolatedHome, { recursive: true, force: true });
+  });
+
   test("fails closed when the bearer token is missing", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "omnifocus-bridge-"));
 
@@ -42,28 +50,33 @@ describe("config", () => {
   });
 
   test("defaults remote access to read-only mode", () => {
-    const config = loadConfig({
-      OMNIFOCUS_MCP_TOKEN: "test-token",
-    });
+    const config = loadConfig(
+      { OMNIFOCUS_MCP_TOKEN: "test-token" },
+      { cwd: isolatedHome, homeDir: isolatedHome },
+    );
 
     expect(config.readOnly).toBe(true);
+    expect(config.tailscaleServe).toBe(false);
   });
 
   test("uses an args-only override with the default upstream command", () => {
-    const config = loadConfig({
-      OMNIFOCUS_MCP_TOKEN: "test-token",
-      OMNIFOCUS_MCP_UPSTREAM_ARGS: '["/absolute/path/to/custom/server.js"]',
-    });
+    const config = loadConfig(
+      {
+        OMNIFOCUS_MCP_TOKEN: "test-token",
+        OMNIFOCUS_MCP_UPSTREAM_ARGS: '["/absolute/path/to/custom/server.js"]',
+      },
+      { cwd: isolatedHome, homeDir: isolatedHome },
+    );
 
     expect(config.upstreamCommand).toBe(process.execPath);
     expect(config.upstreamArgs).toEqual(["/absolute/path/to/custom/server.js"]);
   });
 
   test("uses an explicitly empty args override with the default upstream command", () => {
-    const config = loadConfig({
-      OMNIFOCUS_MCP_TOKEN: "test-token",
-      OMNIFOCUS_MCP_UPSTREAM_ARGS: "",
-    });
+    const config = loadConfig(
+      { OMNIFOCUS_MCP_TOKEN: "test-token", OMNIFOCUS_MCP_UPSTREAM_ARGS: "" },
+      { cwd: isolatedHome, homeDir: isolatedHome },
+    );
 
     expect(config.upstreamCommand).toBe(process.execPath);
     expect(config.upstreamArgs).toEqual([]);
@@ -71,10 +84,10 @@ describe("config", () => {
 
   test("enables verbose mode from env or load options", () => {
     expect(
-      loadConfig({
-        OMNIFOCUS_MCP_TOKEN: "test-token",
-        OMNIFOCUS_MCP_VERBOSE: "true",
-      }).verbose,
+      loadConfig(
+        { OMNIFOCUS_MCP_TOKEN: "test-token", OMNIFOCUS_MCP_VERBOSE: "true" },
+        { cwd: isolatedHome, homeDir: isolatedHome },
+      ).verbose,
     ).toBe(true);
 
     expect(
@@ -85,6 +98,8 @@ describe("config", () => {
         },
         {
           verbose: true,
+          cwd: isolatedHome,
+          homeDir: isolatedHome,
         },
       ).verbose,
     ).toBe(true);
@@ -118,7 +133,7 @@ describe("config", () => {
       ].join("\n"),
     );
 
-    const config = loadConfig({}, { cwd: tempDir });
+    const config = loadConfig({}, { cwd: tempDir, homeDir: tempDir });
 
     expect(config.token).toBe("file-token");
     expect(config.host).toBe("100.64.0.10");
@@ -140,7 +155,7 @@ describe("config", () => {
         OMNIFOCUS_MCP_TOKEN: "env-token",
         OMNIFOCUS_MCP_PORT: "5555",
       },
-      { cwd: tempDir },
+      { cwd: tempDir, homeDir: tempDir },
     );
 
     expect(config.token).toBe("env-token");
@@ -156,15 +171,22 @@ describe("config", () => {
     await writeFile(path.join(configDir, "token"), "separate-token\n", { mode: 0o600 });
     await writeFile(
       path.join(configDir, "config.env"),
-      "OMNIFOCUS_MCP_PORT=4000\nOMNIFOCUS_MCP_READ_ONLY=false\n",
+      "OMNIFOCUS_MCP_PORT=4000\nOMNIFOCUS_MCP_READ_ONLY=false\nOMNIFOCUS_MCP_TAILSCALE_SERVE=true\n",
       { mode: 0o600 },
     );
-    await writeFile(path.join(cwd, ".env"), "OMNIFOCUS_MCP_PORT=5000\n");
+    await writeFile(
+      path.join(cwd, ".env"),
+      "OMNIFOCUS_MCP_PORT=5000\nOMNIFOCUS_MCP_TAILSCALE_SERVE=false\n",
+    );
     const env = { XDG_CONFIG_HOME: path.join(tempDir, "xdg") };
     expect(loadConfig(env, { cwd }).port).toBe(5000);
     expect(loadConfig(env, { cwd }).readOnly).toBe(false);
     expect(loadConfig(env, { cwd }).token).toBe("separate-token");
+    expect(loadConfig(env, { cwd }).tailscaleServe).toBe(false);
     expect(loadConfig({ ...env, OMNIFOCUS_MCP_PORT: "6000" }, { cwd }).port).toBe(6000);
+    expect(
+      loadConfig({ ...env, OMNIFOCUS_MCP_TAILSCALE_SERVE: "true" }, { cwd }).tailscaleServe,
+    ).toBe(true);
     await chmod(path.join(configDir, "config.env"), 0o644);
     expect(() => loadConfig(env, { cwd })).toThrow(/config.env must have mode 0600/);
     await chmod(path.join(configDir, "config.env"), 0o600);
@@ -184,7 +206,7 @@ describe("config", () => {
       {
         OMNIFOCUS_MCP_ENV_FILE: envPath,
       },
-      { cwd: tmpdir() },
+      { cwd: tmpdir(), homeDir: tempDir },
     );
 
     expect(config.token).toBe("relative-file-token");
@@ -197,9 +219,7 @@ describe("config", () => {
     await chmod(tokenPath, 0o644);
 
     expect(() =>
-      loadConfig({
-        OMNIFOCUS_MCP_TOKEN_FILE: tokenPath,
-      }),
+      loadConfig({ OMNIFOCUS_MCP_TOKEN_FILE: tokenPath }, { cwd: tempDir, homeDir: tempDir }),
     ).toThrow(/mode 0600/);
   });
 
@@ -212,9 +232,9 @@ describe("config", () => {
     await chmod(path.dirname(tokenPath), 0o700);
     const linkPath = path.join(homeDir, "token-link");
     await symlink(tokenPath, linkPath);
-    expect(() => loadConfig({ OMNIFOCUS_MCP_TOKEN_FILE: linkPath }, { cwd: homeDir })).toThrow(
-      /symbolic link/,
-    );
+    expect(() =>
+      loadConfig({ OMNIFOCUS_MCP_TOKEN_FILE: linkPath }, { cwd: homeDir, homeDir }),
+    ).toThrow(/symbolic link/);
   });
 });
 
@@ -496,6 +516,7 @@ async function startTestBridge(options: { verbose?: boolean } = {}): Promise<Bri
       upstreamArgs: [fakeUpstreamPath],
       upstreamBinPath: fakeUpstreamPath,
       verbose: options.verbose ?? false,
+      tailscaleServe: false,
     },
     upstream,
   );
