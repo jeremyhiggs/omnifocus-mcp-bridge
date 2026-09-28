@@ -14,7 +14,7 @@ import {
 import path from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { DEFAULT_TOKEN_FILE, loadConfig } from "./config.js";
+import { DEFAULT_TOKEN_FILE, configDirectory, loadConfig } from "./config.js";
 
 export type GenerateTokenOptions = {
   homeDir?: string;
@@ -27,7 +27,10 @@ export type GenerateTokenResult = {
 };
 
 export function generateToken(options: GenerateTokenOptions = {}): GenerateTokenResult {
-  const tokenFilePath = path.resolve(options.homeDir ?? homedir(), DEFAULT_TOKEN_FILE);
+  const tokenFilePath = path.join(
+    configDirectory(process.env, options.homeDir ?? homedir()),
+    "token",
+  );
   const tokenDir = path.dirname(tokenFilePath);
   const token = `${randomBytes(32).toString("base64url")}\n`;
   const tokenStat = lstatSync(tokenFilePath, { throwIfNoEntry: false });

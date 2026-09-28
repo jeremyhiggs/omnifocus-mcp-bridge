@@ -107,20 +107,19 @@ From the release folder:
 ```
 
 These commands run prebuilt files directly with Node. The release build does
-not copy `.env` or tokens from the checkout. Configure `.env` in the release
-folder if needed. Checkout, release scripts, and launchd share the token at
-`~/.config/omnifocus-mcp-bridge/token`, so rebuilding or relocating a release
-does not change client credentials. Rebuilding preserves the release configuration.
+not copy `.env` or tokens from the checkout. Direct runs can use a local `.env`.
+All runs use the private user configuration under
+`${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/`; rebuilding or
+relocating a release does not change its token or LaunchAgent settings.
 
 ## Security
 
 - Bearer auth is required on every request.
 - The bridge refuses to start without `OMNIFOCUS_MCP_TOKEN`,
   `OMNIFOCUS_MCP_TOKEN_FILE`, or `~/.config/omnifocus-mcp-bridge/token`.
-- Token files must be owned by the current user, be regular files rather than
-  symbolic links, and must not be group/world readable. The default token
-  directory must also be private and owned by the current user. Generation
-  sets directory mode `0700` and file mode `0600`.
+- The config directory must be owned by the current user and have mode `0700`.
+  `config.env` and token files must be regular, user-owned files with mode `0600`.
+  Symlinks are rejected.
 - The default bind host is `127.0.0.1`.
 - Read-only mode is enabled by default. Set `OMNIFOCUS_MCP_READ_ONLY=false` only
   when remote mutation is intended.
@@ -129,12 +128,21 @@ does not change client credentials. Rebuilding preserves the release configurati
 
 ## Configuration
 
-`.env` is optional. If present, it is loaded before process environment values,
-so shell, launchd, or service-manager env vars override `.env`.
+Settings load from `$XDG_CONFIG_HOME/omnifocus-mcp-bridge/config.env`, or
+`~/.config/omnifocus-mcp-bridge/config.env` if XDG_CONFIG_HOME is unset.
+For direct runs, a local `.env` overrides `config.env`; process environment
+values override both. The LaunchAgent uses only `config.env` and its plist
+environment. Create the private directory and file with:
+
+```sh
+mkdir -p -m 700 "${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge"
+touch "${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/config.env"
+chmod 600 "${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/config.env"
+```
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OMNIFOCUS_MCP_TOKEN_FILE` | `~/.config/omnifocus-mcp-bridge/token` when present | Private file containing the bearer token. Relative overrides resolve from the env file directory; use an absolute path for a file under your home directory. |
+| `OMNIFOCUS_MCP_TOKEN_FILE` | User config directory `token` when present | Private file containing the bearer token. Relative paths in `config.env` resolve from the config directory; relative paths in `.env` resolve from that file's directory. |
 | `OMNIFOCUS_MCP_TOKEN` | none | Direct bearer token override. Avoid inline shell usage because it can leak through history. |
 | `OMNIFOCUS_MCP_ENV_FILE` | `.env` when present | Optional dotenv file path. If explicitly set, the file must exist. |
 | `OMNIFOCUS_MCP_HOST` | `127.0.0.1` | HTTP bind host. Keep this as `127.0.0.1` for Tailscale Serve mode. |
@@ -206,11 +214,12 @@ This renders `launchd/local.omnifocus-mcp-bridge.plist.template` to:
 ~/Library/LaunchAgents/local.omnifocus-mcp-bridge.plist
 ```
 
-The installer copies a local `.env` from the release folder, or carries forward
-the previous installation's `.env` when the new release has none. It sets the
-installed file to mode `0600`. The token lives outside the release folder and
-is shared by all installations. Once the new agent reports running, older
-installed releases are removed.
+The installer never copies `.env` into an installed release. On migration, if
+`config.env` does not exist, it copies the previous installation's `.env` (or
+the source release's `.env`) into the user config directory with mode `0600`.
+Review any relative file paths after migration. Existing `config.env` is left
+untouched. The token remains in its separate private file. Once the new agent
+reports running, older installed releases are removed.
 
 The service runs an installed copy of the release's `scripts/omnifocus-mcp-bridge.sh`, so
 macOS Login Items show a named bridge entry instead of `pnpm`. The installed

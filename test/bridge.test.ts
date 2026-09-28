@@ -38,7 +38,7 @@ describe("config", () => {
         },
         { cwd: tempDir, homeDir: tempDir },
       ),
-    ).toThrow(/OMNIFOCUS_MCP_TOKEN, OMNIFOCUS_MCP_TOKEN_FILE, or ~\/\.config/);
+    ).toThrow(/OMNIFOCUS_MCP_TOKEN, OMNIFOCUS_MCP_TOKEN_FILE, or .*\/token/);
   });
 
   test("defaults remote access to read-only mode", () => {
@@ -147,6 +147,31 @@ describe("config", () => {
     expect(config.port).toBe(5555);
   });
 
+  test("loads XDG config before local .env and process environment", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "omnifocus-bridge-"));
+    const configDir = path.join(tempDir, "xdg", "omnifocus-mcp-bridge");
+    const cwd = path.join(tempDir, "work");
+    await mkdir(configDir, { recursive: true, mode: 0o700 });
+    await mkdir(cwd);
+    await writeFile(path.join(configDir, "token"), "separate-token\n", { mode: 0o600 });
+    await writeFile(
+      path.join(configDir, "config.env"),
+      "OMNIFOCUS_MCP_PORT=4000\nOMNIFOCUS_MCP_READ_ONLY=false\n",
+      { mode: 0o600 },
+    );
+    await writeFile(path.join(cwd, ".env"), "OMNIFOCUS_MCP_PORT=5000\n");
+    const env = { XDG_CONFIG_HOME: path.join(tempDir, "xdg") };
+    expect(loadConfig(env, { cwd }).port).toBe(5000);
+    expect(loadConfig(env, { cwd }).readOnly).toBe(false);
+    expect(loadConfig(env, { cwd }).token).toBe("separate-token");
+    expect(loadConfig({ ...env, OMNIFOCUS_MCP_PORT: "6000" }, { cwd }).port).toBe(6000);
+    await chmod(path.join(configDir, "config.env"), 0o644);
+    expect(() => loadConfig(env, { cwd })).toThrow(/config.env must have mode 0600/);
+    await chmod(path.join(configDir, "config.env"), 0o600);
+    await chmod(configDir, 0o755);
+    expect(() => loadConfig(env, { cwd })).toThrow(/mode 0700/);
+  });
+
   test("resolves a relative token file path from an explicit env file directory", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "omnifocus-bridge-"));
     const envPath = path.join(tempDir, "bridge.env");
@@ -175,7 +200,7 @@ describe("config", () => {
       loadConfig({
         OMNIFOCUS_MCP_TOKEN_FILE: tokenPath,
       }),
-    ).toThrow(/must not be group\/world readable/);
+    ).toThrow(/mode 0600/);
   });
 
   test("rejects a non-private default token directory and symbolic link token", async () => {

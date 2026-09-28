@@ -49,6 +49,7 @@ test("relocated release runs without dependencies and installation cleans old re
       ),
       PATH: `${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
       HOME: path.join(temp, "home & settings"),
+      XDG_CONFIG_HOME: path.join(temp, "home & settings", "xdg & config"),
       OMNIFOCUS_MCP_PORT: "0",
     };
     // Fail if any release command attempts to rebuild or install dependencies.
@@ -70,7 +71,7 @@ test("relocated release runs without dependencies and installation cleans old re
     );
 
     execFileSync(path.join(release, "scripts/generate-token.sh"), { env, cwd: temp });
-    const tokenPath = path.join(env.HOME, ".config/omnifocus-mcp-bridge/token");
+    const tokenPath = path.join(env.XDG_CONFIG_HOME, "omnifocus-mcp-bridge/token");
     expect((await stat(tokenPath)).mode & 0o777).toBe(0o600);
     expect((await stat(path.dirname(tokenPath))).mode & 0o777).toBe(0o700);
     child = spawn(path.join(release, "scripts/run-server.sh"), { env, cwd: temp });
@@ -81,7 +82,7 @@ test("relocated release runs without dependencies and installation cleans old re
       new StreamableHTTPClientTransport(url, {
         requestInit: {
           headers: {
-            authorization: `Bearer ${(await readFile(path.join(env.HOME, ".config/omnifocus-mcp-bridge/token"), "utf8")).trim()}`,
+            authorization: `Bearer ${(await readFile(tokenPath, "utf8")).trim()}`,
           },
         },
       }),
@@ -115,20 +116,20 @@ test("relocated release runs without dependencies and installation cleans old re
       }),
     ).toThrow();
     await expect(stat(launchLog)).rejects.toThrow();
-    // The installer and installed launcher must both honor a relative .env token override.
-    await writeFile(path.join(release, "service-token"), await readFile(tokenPath), {
-      mode: 0o600,
-    });
-    await writeFile(path.join(release, ".env"), "OMNIFOCUS_MCP_TOKEN_FILE=service-token\n");
+    await chmod(tokenPath, 0o600);
+    // Migrate settings from a previous direct-run release without copying .env into launchd.
+    await writeFile(path.join(release, ".env"), "OMNIFOCUS_MCP_READ_ONLY=false\n");
     await mkdir(path.join(release, ".secrets"));
     await writeFile(path.join(release, ".secrets", "marker"), "do-not-archive\n");
     execFileSync(process.execPath, ["scripts/build-release.mjs", release], { cwd: root });
-    expect(await readFile(path.join(release, ".env"), "utf8")).toContain("service-token");
+    expect(await readFile(path.join(release, ".env"), "utf8")).toContain("READ_ONLY=false");
     const archiveFiles = execFileSync("tar", ["-tzf", `${release}.tar.gz`]).toString();
     expect(archiveFiles).not.toMatch(/(?:^|\/)\.env(?:\n|$)/);
-    expect(archiveFiles).not.toContain("service-token");
     expect(archiveFiles).not.toContain(".secrets");
     execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
+    const configFile = path.join(env.XDG_CONFIG_HOME, "omnifocus-mcp-bridge/config.env");
+    expect(await readFile(configFile, "utf8")).toBe("OMNIFOCUS_MCP_READ_ONLY=false\n");
+    expect((await stat(configFile)).mode & 0o777).toBe(0o600);
     const plist = await readFile(
       path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist"),
       "utf8",
@@ -148,7 +149,10 @@ test("relocated release runs without dependencies and installation cleans old re
     expect(installedRelease).toContain(
       path.join(env.HOME, "Library/Application Support/omnifocus-mcp-bridge/releases"),
     );
+    expect(await readdir(installedRelease)).not.toContain(".env");
+    expect(await readdir(installedRelease)).not.toContain(".secrets");
     expect(plist).toContain(installedRelease.replaceAll("&", "&amp;"));
+    expect(plist).toContain(env.XDG_CONFIG_HOME.replaceAll("&", "&amp;"));
     expect(plist).not.toContain(release.replaceAll("&", "&amp;"));
     expect(plist).not.toContain("__REPO_ROOT__");
     expect(await readFile(launchLog, "utf8")).toContain("bootstrap");
@@ -176,9 +180,10 @@ test("relocated release runs without dependencies and installation cleans old re
     await stop(child);
     child = undefined;
 
-    await writeFile(path.join(installedRelease, ".env"), "OMNIFOCUS_MCP_READ_ONLY=false\n");
     await rm(path.join(release, ".env"));
-    await chmod(tokenPath, 0o600);
+    // A legacy installed release may still hold the live settings in .env.
+    await writeFile(path.join(installedRelease, ".env"), "OMNIFOCUS_MCP_READ_ONLY=true\n");
+    await rm(configFile);
     execFileSync(process.execPath, ["scripts/build-release.mjs", release], { cwd: root });
     await expect(stat(path.join(release, ".env"))).rejects.toThrow();
     await writeFile(path.join(temp, "old-release"), installedRelease);
@@ -196,10 +201,8 @@ test("relocated release runs without dependencies and installation cleans old re
       .toString()
       .trim();
     expect(nextRelease).not.toBe(installedRelease);
-    expect(await readFile(path.join(nextRelease, ".env"), "utf8")).toBe(
-      "OMNIFOCUS_MCP_READ_ONLY=false\n",
-    );
-    expect((await stat(path.join(nextRelease, ".env"))).mode & 0o777).toBe(0o600);
+    expect(await readdir(nextRelease)).not.toContain(".env");
+    expect(await readFile(configFile, "utf8")).toBe("OMNIFOCUS_MCP_READ_ONLY=true\n");
     expect(await readFile(launchLog, "utf8")).toContain("running-before-cleanup");
     await expect(stat(installedRelease)).rejects.toThrow();
   } finally {

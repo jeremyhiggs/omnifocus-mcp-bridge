@@ -33,6 +33,9 @@ LAUNCHER_PATH=""
 SERVICE_PATH=""
 NEW_RELEASE=""
 OLD_ROOT=""
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+CONFIG_DIR="$CONFIG_HOME/omnifocus-mcp-bridge"
+CONFIG_FILE="$CONFIG_DIR/config.env"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -43,10 +46,10 @@ require_command() {
 
 render_template() {
   node - "$TEMPLATE" "$LABEL" "$ROOT_DIR" "$SERVICE_DIR" "$LAUNCHER_PATH" \
-    "$SERVICE_PATH" "$STDOUT_LOG" "$STDERR_LOG" <<'JS'
+    "$SERVICE_PATH" "$STDOUT_LOG" "$STDERR_LOG" "$CONFIG_HOME" <<'JS'
 const fs = require("node:fs");
 const [template, ...values] = process.argv.slice(2);
-const keys = ["LABEL", "REPO_ROOT", "WORKING_DIRECTORY", "LAUNCHER", "PATH", "STDOUT_LOG", "STDERR_LOG"];
+const keys = ["LABEL", "REPO_ROOT", "WORKING_DIRECTORY", "LAUNCHER", "PATH", "STDOUT_LOG", "STDERR_LOG", "CONFIG_HOME"];
 const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
 const replacements = Object.fromEntries(keys.map((key, i) => [
   `__${key}__`, values[i].replace(/[&<>"']/g, char => entities[char])
@@ -88,6 +91,10 @@ NODE_PATH="$(command -v node)"
 TAILSCALE_PATH="$(command -v tailscale)"
 LAUNCHER_PATH="$SERVICE_DIR/omnifocus-mcp-bridge.sh"
 SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
+case "$CONFIG_HOME" in
+  /*) ;;
+  *) echo "XDG_CONFIG_HOME must be an absolute path." >&2; exit 1 ;;
+esac
 
 RELEASE_VERSION="$(node -e '
 const pkg = require(process.argv[1]);
@@ -110,32 +117,35 @@ trap cleanup EXIT
 
 ROOT_DIR="$(mktemp -d "$RELEASES_DIR/$RELEASE_VERSION.XXXXXX")"
 NEW_RELEASE="$ROOT_DIR"
-cp -R "$SOURCE_ROOT/." "$ROOT_DIR/"
+for entry in dist upstream scripts launchd README.md .env.example package.json THIRD_PARTY_NOTICES.txt; do
+  cp -R "$SOURCE_ROOT/$entry" "$ROOT_DIR/"
+done
 
 if [ -f "$PLIST" ]; then
   OLD_ROOT="$(plutil -extract EnvironmentVariables.OMNIFOCUS_MCP_BRIDGE_ROOT raw "$PLIST" 2>/dev/null || true)"
 fi
-if [ ! -e "$ROOT_DIR/.env" ] && [ ! -L "$ROOT_DIR/.env" ] && [ -n "$OLD_ROOT" ]; then
-  if [ -e "$OLD_ROOT/.env" ] || [ -L "$OLD_ROOT/.env" ]; then
-    if [ ! -f "$OLD_ROOT/.env" ] || [ -L "$OLD_ROOT/.env" ]; then
-      echo "Previous release .env must be a regular file." >&2
+if [ ! -e "$CONFIG_FILE" ] && [ ! -L "$CONFIG_FILE" ]; then
+  MIGRATE_ENV=""
+  if [ -n "$OLD_ROOT" ] && { [ -e "$OLD_ROOT/.env" ] || [ -L "$OLD_ROOT/.env" ]; }; then
+    MIGRATE_ENV="$OLD_ROOT/.env"
+  elif [ -e "$SOURCE_ROOT/.env" ] || [ -L "$SOURCE_ROOT/.env" ]; then
+    MIGRATE_ENV="$SOURCE_ROOT/.env"
+  fi
+  if [ -n "$MIGRATE_ENV" ]; then
+    if [ ! -f "$MIGRATE_ENV" ] || [ -L "$MIGRATE_ENV" ]; then
+      echo "Previous .env must be a regular file." >&2
       exit 1
     fi
-    cp "$OLD_ROOT/.env" "$ROOT_DIR/.env"
+    mkdir -p -m 700 "$CONFIG_DIR"
+    cp "$MIGRATE_ENV" "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
   fi
-fi
-if [ -e "$ROOT_DIR/.env" ] || [ -L "$ROOT_DIR/.env" ]; then
-  if [ ! -f "$ROOT_DIR/.env" ] || [ -L "$ROOT_DIR/.env" ]; then
-    echo "Release .env must be a regular file." >&2
-    exit 1
-  fi
-  chmod 600 "$ROOT_DIR/.env"
 fi
 
 TEMPLATE="$ROOT_DIR/launchd/$LABEL.plist.template"
 SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/omnifocus-mcp-bridge.sh"
-# Validate the exact copied release and its .env before changing launchd.
-(cd "$ROOT_DIR" && node dist/generate-token.js --check)
+# Validate with the same environment the LaunchAgent will receive.
+(cd "$ROOT_DIR" && env -i HOME="$HOME" PATH="$SERVICE_PATH" XDG_CONFIG_HOME="$CONFIG_HOME" node dist/generate-token.js --check)
 render_template > "$ROOT_DIR/launch-agent.plist"
 plutil -lint "$ROOT_DIR/launch-agent.plist" >/dev/null
 
