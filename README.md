@@ -27,7 +27,7 @@ What it does not do:
 - macOS with OmniFocus installed and automation access allowed
 - Node.js 24+
 - pnpm 11+ to develop or build a release; not needed to run a release
-- Tailscale, only if using `pnpm start:tailscale`
+- Tailscale, only for explicit Tailscale runs or when LaunchAgent Serve is enabled
 
 ## Quick Start
 
@@ -82,7 +82,7 @@ The outputs are `release/omnifocus-mcp-bridge/` and
 bundled upstream server, OmniFocus scripts, launch scripts, and dependency
 license notices. Runtime needs
 Node.js 24+ and OmniFocus; it does not need pnpm, TypeScript, or `node_modules`.
-Tailscale is required only for Tailscale Serve mode and the LaunchAgent.
+Tailscale is required only when Tailscale Serve is enabled.
 The archive uses an explicit file list and contains no `.env`, tokens, or
 `.secrets`. A local `.env` in the release folder survives rebuilds.
 
@@ -149,6 +149,7 @@ chmod 600 "${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/config.env"
 | `OMNIFOCUS_MCP_PORT` | `3050` | HTTP bind port. |
 | `OMNIFOCUS_MCP_READ_ONLY` | `true` | Set to `false` to expose mutating upstream tools. |
 | `OMNIFOCUS_MCP_VERBOSE` | `false` | Set to `true` for redacted request logs. |
+| `OMNIFOCUS_MCP_TAILSCALE_SERVE` | `false` | Register `/omnifocus-mcp` when the LaunchAgent starts. |
 | `OMNIFOCUS_MCP_UPSTREAM_COMMAND` | Node executable | Optional override for the stdio upstream command. |
 | `OMNIFOCUS_MCP_UPSTREAM_ARGS` | resolved dependency bin path | Optional override args. Supports JSON arrays or shell-like quoted strings. |
 
@@ -157,7 +158,7 @@ not HTTPS; prefer Tailscale Serve for remote access.
 
 ## Tailscale Serve
 
-For tailnet HTTPS:
+For a foreground tailnet HTTPS server, regardless of the config setting:
 
 ```sh
 pnpm start:tailscale
@@ -182,6 +183,20 @@ the expected local bridge. It refuses to overwrite a route pointing elsewhere,
 leaves unrelated Serve routes alone, and does not run `tailscale serve reset`.
 Tailscale Serve mode requires a fixed port; `OMNIFOCUS_MCP_PORT=0` is rejected
 because a persistent route must keep the same local target across restarts.
+`pnpm start` always runs a foreground local-only server, even when the
+LaunchAgent setting is enabled. Stop the LaunchAgent before using either
+foreground command on the same port.
+
+Setting `OMNIFOCUS_MCP_TAILSCALE_SERVE=false` stops registration on future
+starts; it does not remove a previously persisted route. To remove only this
+path while preserving other Serve routes, run:
+
+```sh
+tailscale serve --https=443 --set-path=/omnifocus-mcp off
+tailscale serve status
+```
+
+See [Tailscale's Serve CLI reference](https://tailscale.com/docs/reference/tailscale-cli/serve#disable-tailscale-serve).
 
 ## Run in the Background
 
@@ -189,10 +204,25 @@ Use a macOS LaunchAgent, not a LaunchDaemon, so OmniFocus automation runs in the
 logged-in user's GUI session.
 
 ```sh
+pnpm install --frozen-lockfile
+pnpm token:generate # first installation only
 pnpm release
-./release/omnifocus-mcp-bridge/scripts/generate-token.sh
 pnpm launchd:install
 ```
+
+The LaunchAgent serves on `127.0.0.1:3050` by default. To also register the
+tailnet route, install and connect Tailscale, then add this line to the private
+`${XDG_CONFIG_HOME:-$HOME/.config}/omnifocus-mcp-bridge/config.env` **before**
+installing the agent:
+
+```dotenv
+OMNIFOCUS_MCP_TAILSCALE_SERVE=true
+```
+
+Keep the config directory at mode `0700` and `config.env` at mode `0600` (see
+[Configuration](#configuration)). The installer requires `tailscale` only when
+the setting is enabled. It reads settings from the installed agent's working
+directory, so a checkout `.env` cannot change its install mode.
 
 `pnpm launchd:install` copies `release/omnifocus-mcp-bridge/` into
 `~/Library/Application Support/omnifocus-mcp-bridge/releases/` and runs the

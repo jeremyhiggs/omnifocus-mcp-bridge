@@ -16,6 +16,7 @@ test("relocated release runs without dependencies and installation cleans old re
   const bin = path.join(temp, "bin");
   const automationLog = path.join(temp, "automation.log");
   const launchLog = path.join(temp, "launch.log");
+  const tailscaleLog = path.join(temp, "tailscale.log");
   let child: ChildProcessWithoutNullStreams | undefined;
   let client: Client | undefined;
   try {
@@ -54,7 +55,6 @@ test("relocated release runs without dependencies and installation cleans old re
     };
     // Fail if any release command attempts to rebuild or install dependencies.
     await writeFile(path.join(bin, "pnpm"), "#!/bin/sh\nexit 97\n", { mode: 0o755 });
-    await writeFile(path.join(bin, "tailscale"), "#!/bin/sh\necho '{}'\n", { mode: 0o755 });
     await writeFile(
       path.join(bin, "launchctl"),
       `#!/bin/sh\nprintf '%s\\n' "$*" >> '${launchLog}'\ncase "$1" in\n  print)\n    if [ -f '${path.join(temp, "launch.state")}' ]; then\n      if [ -f '${path.join(temp, "old-release")}' ] && [ -d "$(cat '${path.join(temp, "old-release")}')" ]; then\n        echo 'running-before-cleanup' >> '${launchLog}'\n      fi\n      echo 'state = running'\n    else\n      exit 1\n    fi ;;\n  bootout) rm -f '${path.join(temp, "launch.state")}' ;;\n  bootstrap) touch '${path.join(temp, "launch.state")}' ;;\nesac\n`,
@@ -234,12 +234,78 @@ test("relocated release runs without dependencies and installation cleans old re
     expect(await readFile(configFile, "utf8")).toBe("OMNIFOCUS_MCP_READ_ONLY=true\n");
     expect(await readFile(launchLog, "utf8")).toContain("running-before-cleanup");
     await expect(stat(installedRelease)).rejects.toThrow();
+
+    // A source .env cannot enable Serve for an installed agent with private config set to false.
+    await writeFile(configFile, "OMNIFOCUS_MCP_TAILSCALE_SERVE=false\n");
+    await writeFile(path.join(release, ".env"), "OMNIFOCUS_MCP_TAILSCALE_SERVE=true\n");
+    execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
+    await expect(stat(tailscaleLog)).rejects.toThrow();
+    await rm(path.join(release, ".env"));
+
+    // Enabling Serve requires tailscale before the installer switches launchd.
+    await writeFile(configFile, "OMNIFOCUS_MCP_TAILSCALE_SERVE=true\n");
+    const plistPath = path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist");
+    const previousPlist = await readFile(plistPath, "utf8");
+    expect(() =>
+      execFileSync(path.join(release, "scripts/install-launch-agent.sh"), {
+        env,
+        cwd: temp,
+        stdio: "pipe",
+      }),
+    ).toThrow();
+    expect(await readFile(plistPath, "utf8")).toBe(previousPlist);
+
+    // The explicit local command stays local even when config enables Serve.
+    child = spawn(path.join(release, "scripts/run-server.sh"), { env, cwd: temp });
+    expect((await fetch(await waitForUrl(child))).status).toBe(401);
+    await stop(child);
+    child = undefined;
+
+    await writeFile(
+      path.join(bin, "tailscale"),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> '${tailscaleLog}'\nif [ "$1" = serve ] && [ "$2" = status ]; then echo '{}'; fi\n`,
+      { mode: 0o755 },
+    );
+    // The explicit Tailscale command forces registration even when config disables it.
+    await writeFile(configFile, "OMNIFOCUS_MCP_TAILSCALE_SERVE=false\n");
+    child = spawn(path.join(release, "scripts/run-tailscale.sh"), {
+      env: { ...env, OMNIFOCUS_MCP_PORT: String(port) },
+      cwd: temp,
+    });
+    expect((await fetch(await waitForUrl(child))).status).toBe(401);
+    await stop(child);
+    child = undefined;
+    expect(await readFile(tailscaleLog, "utf8")).toContain(
+      `serve --bg --set-path /omnifocus-mcp http://127.0.0.1:${port}/mcp`,
+    );
+
+    await writeFile(configFile, "OMNIFOCUS_MCP_TAILSCALE_SERVE=true\n");
+    execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
+    const serveRelease = execFileSync(
+      "plutil",
+      ["-extract", "EnvironmentVariables.OMNIFOCUS_MCP_BRIDGE_ROOT", "raw", plistPath],
+      { env },
+    )
+      .toString()
+      .trim();
+    child = spawn(launcher, {
+      env: {
+        ...env,
+        OMNIFOCUS_MCP_BRIDGE_ROOT: serveRelease,
+        OMNIFOCUS_MCP_PORT: String(port),
+      },
+      cwd: temp,
+    });
+    expect((await fetch(await waitForUrl(child))).status).toBe(401);
+    await stop(child);
+    child = undefined;
+    expect((await readFile(tailscaleLog, "utf8")).match(/serve --bg --set-path/g)).toHaveLength(2);
   } finally {
     await client?.close();
     if (child) await stop(child);
     await rm(temp, { recursive: true, force: true });
   }
-}, 30_000);
+}, 60_000);
 
 function waitForUrl(child: ChildProcessWithoutNullStreams): Promise<URL> {
   return new Promise((resolve, reject) => {

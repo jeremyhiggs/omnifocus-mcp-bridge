@@ -47,6 +47,7 @@ describe("config", () => {
     });
 
     expect(config.readOnly).toBe(true);
+    expect(config.tailscaleServe).toBe(false);
   });
 
   test("uses an args-only override with the default upstream command", () => {
@@ -156,15 +157,22 @@ describe("config", () => {
     await writeFile(path.join(configDir, "token"), "separate-token\n", { mode: 0o600 });
     await writeFile(
       path.join(configDir, "config.env"),
-      "OMNIFOCUS_MCP_PORT=4000\nOMNIFOCUS_MCP_READ_ONLY=false\n",
+      "OMNIFOCUS_MCP_PORT=4000\nOMNIFOCUS_MCP_READ_ONLY=false\nOMNIFOCUS_MCP_TAILSCALE_SERVE=true\n",
       { mode: 0o600 },
     );
-    await writeFile(path.join(cwd, ".env"), "OMNIFOCUS_MCP_PORT=5000\n");
+    await writeFile(
+      path.join(cwd, ".env"),
+      "OMNIFOCUS_MCP_PORT=5000\nOMNIFOCUS_MCP_TAILSCALE_SERVE=false\n",
+    );
     const env = { XDG_CONFIG_HOME: path.join(tempDir, "xdg") };
     expect(loadConfig(env, { cwd }).port).toBe(5000);
     expect(loadConfig(env, { cwd }).readOnly).toBe(false);
     expect(loadConfig(env, { cwd }).token).toBe("separate-token");
+    expect(loadConfig(env, { cwd }).tailscaleServe).toBe(false);
     expect(loadConfig({ ...env, OMNIFOCUS_MCP_PORT: "6000" }, { cwd }).port).toBe(6000);
+    expect(
+      loadConfig({ ...env, OMNIFOCUS_MCP_TAILSCALE_SERVE: "true" }, { cwd }).tailscaleServe,
+    ).toBe(true);
     await chmod(path.join(configDir, "config.env"), 0o644);
     expect(() => loadConfig(env, { cwd })).toThrow(/config.env must have mode 0600/);
     await chmod(path.join(configDir, "config.env"), 0o600);
@@ -496,6 +504,7 @@ async function startTestBridge(options: { verbose?: boolean } = {}): Promise<Bri
       upstreamArgs: [fakeUpstreamPath],
       upstreamBinPath: fakeUpstreamPath,
       verbose: options.verbose ?? false,
+      tailscaleServe: false,
     },
     upstream,
   );
