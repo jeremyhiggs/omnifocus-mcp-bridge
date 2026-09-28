@@ -1,0 +1,27 @@
+blockExoticSubdeps: true
+engineStrict: true
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  - "@hono/node-server@2.0.10"
+  - expect-type@1.4.0
+  - fast-uri@3.1.6
+  - hono@4.13.5
+  - ip-address@10.3.1
+  - nanoid@3.3.18
+  - omnifocus-mcp-enhanced@2.2.0
+  - postcss@8.5.23
+  - qs@6.16.0
+  - range-parser@1.3.0
+  - vite@7.3.6
+allowBuilds:
+  "esbuild@0.25.12 || 0.28.1": true
+overrides:
+  "@hono/node-server@<2.0.10": 2.0.10
+  "fast-uri@>=3.0.0 <3.1.6": 3.1.6
+  "hono@>=4.0.0 <4.13.5": 4.13.5
+  "ip-address@>=10.0.0 <10.3.1": 10.3.1
+  "nanoid@>=3.0.0 <3.3.18": 3.3.18
+  "postcss@>=8.0.0 <8.5.23": 8.5.23
+  "qs@>=6.0.0 <6.16.0": 6.16.0
+preferFrozenLockfile: true
+strictDepBuilds: true

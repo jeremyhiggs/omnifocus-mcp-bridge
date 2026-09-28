@@ -1,0 +1,43 @@
+{
+  "name": "omnifocus-mcp-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Authenticated Streamable HTTP bridge for the omnifocus-mcp-enhanced stdio MCP server.",
+  "bin": {
+    "omnifocus-mcp-bridge": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/index.ts",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "launchd:install": "scripts/install-launch-agent.sh",
+    "launchd:logs": "scripts/tail-launch-agent-logs.sh",
+    "launchd:uninstall": "scripts/uninstall-launch-agent.sh",
+    "lint": "biome lint .",
+    "start": "scripts/run-server.sh",
+    "start:tailscale": "scripts/run-tailscale.sh",
+    "test": "vitest run",
+    "token:generate": "scripts/generate-token.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "release": "pnpm run build && node scripts/build-release.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "dotenv": "17.4.2",
+    "omnifocus-mcp-enhanced": "2.1.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.0",
+    "@types/node": "24.0.7",
+    "esbuild": "0.25.12",
+    "tsx": "4.20.3",
+    "typescript": "5.8.3",
+    "vitest": "4.1.11"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@11.28.0"
+}

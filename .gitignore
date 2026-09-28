@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+.pnpm-store/
+coverage/
+.env
+.env.*
+!.env.example
+.secrets/
+.DS_Store
+*.log
