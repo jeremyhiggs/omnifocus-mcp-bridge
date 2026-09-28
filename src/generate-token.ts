@@ -6,6 +6,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   renameSync,
   realpathSync,
   unlinkSync,
@@ -14,6 +15,7 @@ import {
 import path from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { parse as parseDotenv } from "dotenv";
 import { DEFAULT_TOKEN_FILE, configDirectory, loadConfig } from "./config.js";
 
 export type GenerateTokenOptions = {
@@ -103,6 +105,23 @@ export function parseArgs(args: string[]): GenerateTokenOptions {
 }
 
 export function run(args: string[] = process.argv.slice(2)): void {
+  if (args.length === 2 && args[0] === "--check-migration") {
+    const previous = parseDotenv(readFileSync(args[1]));
+    if (previous.OMNIFOCUS_MCP_TOKEN?.trim()) {
+      throw new Error("Move OMNIFOCUS_MCP_TOKEN into a private token file before installing.");
+    }
+    const tokenFile = previous.OMNIFOCUS_MCP_TOKEN_FILE?.trim();
+    if (tokenFile && !path.isAbsolute(tokenFile)) {
+      throw new Error("Use an absolute OMNIFOCUS_MCP_TOKEN_FILE path before installing.");
+    }
+    if (tokenFile) {
+      const relative = path.relative(path.dirname(path.resolve(args[1])), tokenFile);
+      if (relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`))) {
+        throw new Error("Move the token file outside the release before installing.");
+      }
+    }
+    return;
+  }
   if (args.length === 1 && args[0] === "--check") {
     loadConfig();
     console.error("MCP bearer token configuration and permissions validated.");

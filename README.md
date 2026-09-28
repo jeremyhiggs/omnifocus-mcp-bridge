@@ -217,8 +217,9 @@ This renders `launchd/local.omnifocus-mcp-bridge.plist.template` to:
 The installer never copies `.env` into an installed release. On migration, if
 `config.env` does not exist, it copies the previous installation's `.env` (or
 the source release's `.env`) into the user config directory with mode `0600`.
-Review any relative file paths after migration. Existing `config.env` is left
-untouched. The token remains in its separate private file. Once the new agent
+Migration requires absolute token-file paths and rejects inline tokens; move
+either into a separate private file before installing. Existing `config.env` is
+left untouched. Once the new agent
 reports running, older installed releases are removed.
 
 The service runs an installed copy of the release's `scripts/omnifocus-mcp-bridge.sh`, so

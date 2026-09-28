@@ -32,6 +32,7 @@ SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/omnifocus-mcp-bridge.sh"
 LAUNCHER_PATH=""
 SERVICE_PATH=""
 NEW_RELEASE=""
+NEW_CONFIG=""
 OLD_ROOT=""
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CONFIG_DIR="$CONFIG_HOME/omnifocus-mcp-bridge"
@@ -111,6 +112,7 @@ if ! mkdir "$LOCK_DIR"; then
 fi
 cleanup() {
   if [ -n "$NEW_RELEASE" ]; then rm -rf "$NEW_RELEASE"; fi
+  if [ -n "$NEW_CONFIG" ]; then rm -f "$NEW_CONFIG"; fi
   rmdir "$LOCK_DIR"
 }
 trap cleanup EXIT
@@ -136,9 +138,17 @@ if [ ! -e "$CONFIG_FILE" ] && [ ! -L "$CONFIG_FILE" ]; then
       echo "Previous .env must be a regular file." >&2
       exit 1
     fi
+    node "$ROOT_DIR/dist/generate-token.js" --check-migration "$MIGRATE_ENV"
     mkdir -p -m 700 "$CONFIG_DIR"
-    cp "$MIGRATE_ENV" "$CONFIG_FILE"
-    chmod 600 "$CONFIG_FILE"
+    node -e '
+const stat = require("node:fs").lstatSync(process.argv[1]);
+if (!stat.isDirectory() || (stat.mode & 0o777) !== 0o700 || (process.getuid && stat.uid !== process.getuid())) {
+  throw new Error("Config directory must be owned by the current user, not a symbolic link, and have mode 0700.");
+}
+' "$CONFIG_DIR"
+    umask 077
+    NEW_CONFIG="$CONFIG_FILE"
+    install -m 600 "$MIGRATE_ENV" "$CONFIG_FILE"
   fi
 fi
 
@@ -148,6 +158,7 @@ SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/omnifocus-mcp-bridge.sh"
 (cd "$ROOT_DIR" && env -i HOME="$HOME" PATH="$SERVICE_PATH" XDG_CONFIG_HOME="$CONFIG_HOME" node dist/generate-token.js --check)
 render_template > "$ROOT_DIR/launch-agent.plist"
 plutil -lint "$ROOT_DIR/launch-agent.plist" >/dev/null
+NEW_CONFIG=""
 
 mkdir -p "$HOME/Library/LaunchAgents" "$SERVICE_DIR" "$LOG_DIR"
 cp "$SOURCE_LAUNCHER_PATH" "$LAUNCHER_PATH"

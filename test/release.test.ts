@@ -117,8 +117,38 @@ test("relocated release runs without dependencies and installation cleans old re
     ).toThrow();
     await expect(stat(launchLog)).rejects.toThrow();
     await chmod(tokenPath, 0o600);
+    const configFile = path.join(env.XDG_CONFIG_HOME, "omnifocus-mcp-bridge/config.env");
+    await writeFile(path.join(release, ".env"), "OMNIFOCUS_MCP_TOKEN_FILE=service-token\n");
+    expect(() =>
+      execFileSync(path.join(release, "scripts/install-launch-agent.sh"), {
+        env,
+        cwd: temp,
+        stdio: "pipe",
+      }),
+    ).toThrow();
+    await expect(stat(configFile)).rejects.toThrow();
     // Migrate settings from a previous direct-run release without copying .env into launchd.
     await writeFile(path.join(release, ".env"), "OMNIFOCUS_MCP_READ_ONLY=false\n");
+    await chmod(tokenPath, 0o644);
+    expect(() =>
+      execFileSync(path.join(release, "scripts/install-launch-agent.sh"), {
+        env,
+        cwd: temp,
+        stdio: "pipe",
+      }),
+    ).toThrow();
+    await expect(stat(configFile)).rejects.toThrow();
+    await chmod(tokenPath, 0o600);
+    await chmod(path.dirname(tokenPath), 0o755);
+    expect(() =>
+      execFileSync(path.join(release, "scripts/install-launch-agent.sh"), {
+        env,
+        cwd: temp,
+        stdio: "pipe",
+      }),
+    ).toThrow();
+    await expect(stat(configFile)).rejects.toThrow();
+    await chmod(path.dirname(tokenPath), 0o700);
     await mkdir(path.join(release, ".secrets"));
     await writeFile(path.join(release, ".secrets", "marker"), "do-not-archive\n");
     execFileSync(process.execPath, ["scripts/build-release.mjs", release], { cwd: root });
@@ -127,7 +157,6 @@ test("relocated release runs without dependencies and installation cleans old re
     expect(archiveFiles).not.toMatch(/(?:^|\/)\.env(?:\n|$)/);
     expect(archiveFiles).not.toContain(".secrets");
     execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
-    const configFile = path.join(env.XDG_CONFIG_HOME, "omnifocus-mcp-bridge/config.env");
     expect(await readFile(configFile, "utf8")).toBe("OMNIFOCUS_MCP_READ_ONLY=false\n");
     expect((await stat(configFile)).mode & 0o777).toBe(0o600);
     const plist = await readFile(
