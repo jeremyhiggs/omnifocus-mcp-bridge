@@ -10,7 +10,7 @@ import { expect, test } from "vitest";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
-test("relocated release runs without dependencies and launchd references it", async () => {
+test("relocated release runs without dependencies and installation cleans old releases", async () => {
   const temp = await mkdtemp(path.join(tmpdir(), "omnifocus-release-"));
   const release = path.join(temp, "release & portable");
   const bin = path.join(temp, "bin");
@@ -48,7 +48,7 @@ test("relocated release runs without dependencies and launchd references it", as
         ),
       ),
       PATH: `${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
-      HOME: path.join(temp, "home"),
+      HOME: path.join(temp, "home & settings"),
       OMNIFOCUS_MCP_PORT: "0",
     };
     // Fail if any release command attempts to rebuild or install dependencies.
@@ -56,7 +56,7 @@ test("relocated release runs without dependencies and launchd references it", as
     await writeFile(path.join(bin, "tailscale"), "#!/bin/sh\necho '{}'\n", { mode: 0o755 });
     await writeFile(
       path.join(bin, "launchctl"),
-      `#!/bin/sh\nprintf '%s\\n' "$*" >> '${launchLog}'\n[ "$1" != print ]\n`,
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> '${launchLog}'\ncase "$1" in\n  print)\n    if [ -f '${path.join(temp, "launch.state")}' ]; then\n      if [ -f '${path.join(temp, "old-release")}' ] && [ -d "$(cat '${path.join(temp, "old-release")}')" ]; then\n        echo 'running-before-cleanup' >> '${launchLog}'\n      fi\n      echo 'state = running'\n    else\n      exit 1\n    fi ;;\n  bootout) rm -f '${path.join(temp, "launch.state")}' ;;\n  bootstrap) touch '${path.join(temp, "launch.state")}' ;;\nesac\n`,
       { mode: 0o755 },
     );
     await writeFile(
@@ -120,13 +120,36 @@ test("relocated release runs without dependencies and launchd references it", as
       mode: 0o600,
     });
     await writeFile(path.join(release, ".env"), "OMNIFOCUS_MCP_TOKEN_FILE=service-token\n");
+    await mkdir(path.join(release, ".secrets"));
+    await writeFile(path.join(release, ".secrets", "marker"), "do-not-archive\n");
+    execFileSync(process.execPath, ["scripts/build-release.mjs", release], { cwd: root });
+    expect(await readFile(path.join(release, ".env"), "utf8")).toContain("service-token");
+    const archiveFiles = execFileSync("tar", ["-tzf", `${release}.tar.gz`]).toString();
+    expect(archiveFiles).not.toMatch(/(?:^|\/)\.env(?:\n|$)/);
+    expect(archiveFiles).not.toContain("service-token");
+    expect(archiveFiles).not.toContain(".secrets");
     execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
     const plist = await readFile(
       path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist"),
       "utf8",
     );
-    expect(plist).toContain(release.replaceAll("&", "&amp;"));
-    expect(plist).not.toContain(root);
+    const installedRelease = execFileSync(
+      "plutil",
+      [
+        "-extract",
+        "EnvironmentVariables.OMNIFOCUS_MCP_BRIDGE_ROOT",
+        "raw",
+        path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist"),
+      ],
+      { env },
+    )
+      .toString()
+      .trim();
+    expect(installedRelease).toContain(
+      path.join(env.HOME, "Library/Application Support/omnifocus-mcp-bridge/releases"),
+    );
+    expect(plist).toContain(installedRelease.replaceAll("&", "&amp;"));
+    expect(plist).not.toContain(release.replaceAll("&", "&amp;"));
     expect(plist).not.toContain("__REPO_ROOT__");
     expect(await readFile(launchLog, "utf8")).toContain("bootstrap");
     const launcher = path.join(
@@ -141,11 +164,44 @@ test("relocated release runs without dependencies and launchd references it", as
     const port = address.port;
     await new Promise<void>((resolve) => reservation.close(() => resolve()));
     child = spawn(launcher, {
-      env: { ...env, OMNIFOCUS_MCP_BRIDGE_ROOT: release, OMNIFOCUS_MCP_PORT: String(port) },
+      env: {
+        ...env,
+        OMNIFOCUS_MCP_BRIDGE_ROOT: installedRelease,
+        OMNIFOCUS_MCP_PORT: String(port),
+      },
       cwd: temp,
     });
     const tailscaleUrl = await waitForUrl(child);
     expect((await fetch(tailscaleUrl)).status).toBe(401);
+    await stop(child);
+    child = undefined;
+
+    await writeFile(path.join(installedRelease, ".env"), "OMNIFOCUS_MCP_READ_ONLY=false\n");
+    await rm(path.join(release, ".env"));
+    await chmod(tokenPath, 0o600);
+    execFileSync(process.execPath, ["scripts/build-release.mjs", release], { cwd: root });
+    await expect(stat(path.join(release, ".env"))).rejects.toThrow();
+    await writeFile(path.join(temp, "old-release"), installedRelease);
+    execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
+    const nextRelease = execFileSync(
+      "plutil",
+      [
+        "-extract",
+        "EnvironmentVariables.OMNIFOCUS_MCP_BRIDGE_ROOT",
+        "raw",
+        path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist"),
+      ],
+      { env },
+    )
+      .toString()
+      .trim();
+    expect(nextRelease).not.toBe(installedRelease);
+    expect(await readFile(path.join(nextRelease, ".env"), "utf8")).toBe(
+      "OMNIFOCUS_MCP_READ_ONLY=false\n",
+    );
+    expect((await stat(path.join(nextRelease, ".env"))).mode & 0o777).toBe(0o600);
+    expect(await readFile(launchLog, "utf8")).toContain("running-before-cleanup");
+    await expect(stat(installedRelease)).rejects.toThrow();
   } finally {
     await client?.close();
     if (child) await stop(child);

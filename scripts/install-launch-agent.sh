@@ -17,9 +17,11 @@ if [ ! -f "$ROOT_DIR/upstream/dist/server.js" ] || [ ! -f "$ROOT_DIR/dist/tailsc
   exit 1
 fi
 ROOT_DIR="$(CDPATH= cd -- "$ROOT_DIR" && pwd)"
+SOURCE_ROOT="$ROOT_DIR"
 TEMPLATE="$ROOT_DIR/launchd/$LABEL.plist.template"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SERVICE_DIR="$HOME/Library/Application Support/omnifocus-mcp-bridge"
+RELEASES_DIR="$SERVICE_DIR/releases"
 LOG_DIR="$HOME/Library/Logs/omnifocus-mcp-bridge"
 STDOUT_LOG="$LOG_DIR/out.log"
 STDERR_LOG="$LOG_DIR/err.log"
@@ -29,6 +31,8 @@ TAILSCALE_PATH=""
 SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/omnifocus-mcp-bridge.sh"
 LAUNCHER_PATH=""
 SERVICE_PATH=""
+NEW_RELEASE=""
+OLD_ROOT=""
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -85,22 +89,87 @@ TAILSCALE_PATH="$(command -v tailscale)"
 LAUNCHER_PATH="$SERVICE_DIR/omnifocus-mcp-bridge.sh"
 SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
 
-# Validate the same token configuration the service will use before changing launchd.
+RELEASE_VERSION="$(node -e '
+const pkg = require(process.argv[1]);
+const version = `${pkg.version}+${pkg.buildId}`;
+if (!/^[A-Za-z0-9.+_-]+$/.test(version) || !/^[0-9a-f]{12}$/.test(pkg.buildId)) process.exit(1);
+process.stdout.write(version);
+' "$SOURCE_ROOT/package.json")"
+mkdir -p "$RELEASES_DIR"
+chmod 700 "$RELEASES_DIR"
+LOCK_DIR="$SERVICE_DIR/.install.lock"
+if ! mkdir "$LOCK_DIR"; then
+  echo "Another install is running, or $LOCK_DIR is stale." >&2
+  exit 1
+fi
+cleanup() {
+  if [ -n "$NEW_RELEASE" ]; then rm -rf "$NEW_RELEASE"; fi
+  rmdir "$LOCK_DIR"
+}
+trap cleanup EXIT
+
+ROOT_DIR="$(mktemp -d "$RELEASES_DIR/$RELEASE_VERSION.XXXXXX")"
+NEW_RELEASE="$ROOT_DIR"
+cp -R "$SOURCE_ROOT/." "$ROOT_DIR/"
+
+if [ -f "$PLIST" ]; then
+  OLD_ROOT="$(plutil -extract EnvironmentVariables.OMNIFOCUS_MCP_BRIDGE_ROOT raw "$PLIST" 2>/dev/null || true)"
+fi
+if [ ! -e "$ROOT_DIR/.env" ] && [ ! -L "$ROOT_DIR/.env" ] && [ -n "$OLD_ROOT" ]; then
+  if [ -e "$OLD_ROOT/.env" ] || [ -L "$OLD_ROOT/.env" ]; then
+    if [ ! -f "$OLD_ROOT/.env" ] || [ -L "$OLD_ROOT/.env" ]; then
+      echo "Previous release .env must be a regular file." >&2
+      exit 1
+    fi
+    cp "$OLD_ROOT/.env" "$ROOT_DIR/.env"
+  fi
+fi
+if [ -e "$ROOT_DIR/.env" ] || [ -L "$ROOT_DIR/.env" ]; then
+  if [ ! -f "$ROOT_DIR/.env" ] || [ -L "$ROOT_DIR/.env" ]; then
+    echo "Release .env must be a regular file." >&2
+    exit 1
+  fi
+  chmod 600 "$ROOT_DIR/.env"
+fi
+
+TEMPLATE="$ROOT_DIR/launchd/$LABEL.plist.template"
+SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/omnifocus-mcp-bridge.sh"
+# Validate the exact copied release and its .env before changing launchd.
 (cd "$ROOT_DIR" && node dist/generate-token.js --check)
+render_template > "$ROOT_DIR/launch-agent.plist"
+plutil -lint "$ROOT_DIR/launch-agent.plist" >/dev/null
 
 mkdir -p "$HOME/Library/LaunchAgents" "$SERVICE_DIR" "$LOG_DIR"
 cp "$SOURCE_LAUNCHER_PATH" "$LAUNCHER_PATH"
 chmod 755 "$LAUNCHER_PATH"
-render_template > "$PLIST"
-plutil -lint "$PLIST" >/dev/null
+cp "$ROOT_DIR/launch-agent.plist" "$PLIST"
+NEW_RELEASE=""
 
 launchctl bootout "$GUI_DOMAIN/$LABEL" >/dev/null 2>&1 || true
 wait_for_service_removal
 bootstrap_launch_agent
 launchctl enable "$GUI_DOMAIN/$LABEL"
 launchctl kickstart -k "$GUI_DOMAIN/$LABEL"
+attempts=0
+until launchctl print "$GUI_DOMAIN/$LABEL" | grep -q 'state = running'; do
+  attempts=$((attempts + 1))
+  if [ "$attempts" -ge 10 ]; then
+    echo "Timed out waiting for $LABEL to run; previous releases were kept." >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+for old_release in "$RELEASES_DIR"/*; do
+  if [ "$old_release" != "$ROOT_DIR" ] && [ -d "$old_release" ] \
+    && [ ! -L "$old_release" ] && [ -f "$old_release/package.json" ] \
+    && [ -f "$old_release/dist/tailscale-start.js" ]; then
+    rm -rf "$old_release"
+  fi
+done
 
 echo "Installed and started $LABEL"
+echo "Release: $ROOT_DIR"
 echo "Plist: $PLIST"
 echo "Launcher: $LAUNCHER_PATH"
 echo "Logs:  $LOG_DIR"

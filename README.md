@@ -77,11 +77,14 @@ pnpm install --frozen-lockfile
 pnpm release
 ```
 
-The output is `release/omnifocus-mcp-bridge/`. Copy that entire folder to its
-permanent location. It includes the bundled bridge, bundled upstream server,
-OmniFocus scripts, launch scripts, and dependency license notices. Runtime needs
+The outputs are `release/omnifocus-mcp-bridge/` and
+`release/omnifocus-mcp-bridge.tar.gz`. The archive includes the bundled bridge,
+bundled upstream server, OmniFocus scripts, launch scripts, and dependency
+license notices. Runtime needs
 Node.js 24+ and OmniFocus; it does not need pnpm, TypeScript, or `node_modules`.
 Tailscale is required only for Tailscale Serve mode and the LaunchAgent.
+The archive uses an explicit file list and contains no `.env`, tokens, or
+`.secrets`. A local `.env` in the release folder survives rebuilds.
 
 Check a release's version without starting the bridge:
 
@@ -183,8 +186,9 @@ pnpm release
 pnpm launchd:install
 ```
 
-`pnpm launchd:install` references `release/omnifocus-mcp-bridge/` by default.
-For a relocated release, install directly from its permanent location:
+`pnpm launchd:install` copies `release/omnifocus-mcp-bridge/` into
+`~/Library/Application Support/omnifocus-mcp-bridge/releases/` and runs the
+LaunchAgent from that copy. For an extracted archive, install from its folder:
 
 ```sh
 ./scripts/install-launch-agent.sh
@@ -202,19 +206,19 @@ This renders `launchd/local.omnifocus-mcp-bridge.plist.template` to:
 ~/Library/LaunchAgents/local.omnifocus-mcp-bridge.plist
 ```
 
-If migrating from a previous installation of this service, uninstall
-it from the previous checkout before installing this service. Both use the same
-default port, installed launcher, and log directory. The token now lives outside
-the release folder and is shared by all installations.
+The installer copies a local `.env` from the release folder, or carries forward
+the previous installation's `.env` when the new release has none. It sets the
+installed file to mode `0600`. The token lives outside the release folder and
+is shared by all installations. Once the new agent reports running, older
+installed releases are removed.
 
 The service runs an installed copy of the release's `scripts/omnifocus-mcp-bridge.sh`, so
 macOS Login Items show a named bridge entry instead of `pnpm`. The installed
 launcher lives outside `~/Documents` to avoid macOS background-item privacy
-restrictions. The installer validates token configuration and permissions before modifying
-launchd. The plist points it at the release folder; startup runs Node
-directly and never rebuilds or installs dependencies. Keep that folder in place,
-and reinstall the LaunchAgent if you move it. The launcher keeps the bridge
-alive and writes logs to:
+restrictions. The installer validates token configuration and permissions in
+the new copy before modifying launchd. The plist points at that installed copy;
+startup runs Node directly and never rebuilds or installs dependencies. The
+launcher keeps the bridge alive and writes logs to:
 
 ```text
 ~/Library/Logs/omnifocus-mcp-bridge/

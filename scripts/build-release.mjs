@@ -1,5 +1,6 @@
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +27,10 @@ const options = {
 };
 
 await mkdir(output, { recursive: true });
+// Keep local .env, but replace every generated directory before archiving it.
+for (const directory of ["dist", "upstream", "scripts", "launchd"]) {
+  await rm(path.join(output, directory), { recursive: true, force: true });
+}
 const bridge = await build({
   ...options,
   entryPoints: ["src/index.ts", "src/tailscale-start.ts", "src/generate-token.ts"],
@@ -89,7 +94,7 @@ for (const directory of [...packages].sort()) {
   for (const name of licenses) notices.push(await readFile(path.join(directory, name), "utf8"));
 }
 await writeFile(path.join(output, "THIRD_PARTY_NOTICES.txt"), notices.join("\n\n"));
-const hash = createHash("sha256");
+const hash = createHash("sha256").update(metadata.version);
 for (const file of [
   "dist/index.js",
   "dist/tailscale-start.js",
@@ -97,6 +102,11 @@ for (const file of [
   "upstream/dist/server.js",
 ]) {
   hash.update(await readFile(path.join(output, file)));
+}
+for (const directory of ["scripts", "launchd"]) {
+  for (const name of (await readdir(path.join(output, directory))).sort()) {
+    hash.update(`${directory}/${name}`).update(await readFile(path.join(output, directory, name)));
+  }
 }
 await writeFile(
   path.join(output, "package.json"),
@@ -113,4 +123,23 @@ await writeFile(
     2,
   )}\n`,
 );
-console.log(`Release ready: ${path.relative(root, output)} (Node.js 24+; no node_modules or pnpm)`);
+const archive = `${output}.tar.gz`;
+execFileSync("tar", [
+  "-czf",
+  archive,
+  "-C",
+  path.dirname(output),
+  ...[
+    "dist",
+    "upstream",
+    "scripts",
+    "launchd",
+    "README.md",
+    ".env.example",
+    "package.json",
+    "THIRD_PARTY_NOTICES.txt",
+  ].map((name) => `${path.basename(output)}/${name}`),
+]);
+console.log(
+  `Release ready: ${path.relative(root, output)} and ${path.relative(root, archive)} (Node.js 24+; no node_modules or pnpm)`,
+);
