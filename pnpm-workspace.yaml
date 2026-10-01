@@ -2,9 +2,9 @@ blockExoticSubdeps: true
 engineStrict: true
 minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
-  - "@hono/node-server@2.0.10"
+  - "@hono/node-server@2.1.3"
   - expect-type@1.4.0
-  - hono@4.13.5
+  - hono@4.13.11
   - nanoid@3.3.18
   - omnifocus-mcp-enhanced@2.2.0
   - postcss@8.5.23
@@ -14,9 +14,9 @@ minimumReleaseAgeExclude:
 allowBuilds:
   "esbuild@0.25.12 || 0.28.1": true
 overrides:
-  "@hono/node-server@<2.0.10": 2.0.10
+  "@hono/node-server@>=1.0.0 <2.1.3": 2.1.3
   "fast-uri@>=3.0.0 <3.1.8": 3.1.8
-  "hono@>=4.0.0 <4.13.5": 4.13.5
+  "hono@>=4.0.0 <4.13.11": 4.13.11
   "ip-address@>=10.0.0 <10.7.1": 10.7.1
   "nanoid@>=3.0.0 <3.3.18": 3.3.18
   "postcss@>=8.0.0 <8.5.23": 8.5.23
