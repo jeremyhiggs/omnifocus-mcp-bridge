@@ -10,16 +10,21 @@ minimumReleaseAgeExclude:
   - postcss@8.5.23
   - qs@6.16.0
   - range-parser@1.3.0
+  # Security fix for GHSA-68fv-2mgg-jv7q, released within the maturity window.
+  - source-map-js@1.2.2
   - vite@7.3.6
 allowBuilds:
   "esbuild@0.25.12 || 0.28.1": true
 overrides:
   "@hono/node-server@>=1.0.0 <2.1.3": 2.1.3
+  "@modelcontextprotocol/sdk@>=1.12.0 <1.31.0": 1.31.0
   "fast-uri@>=3.0.0 <3.1.8": 3.1.8
   "hono@>=4.0.0 <4.13.11": 4.13.11
   "ip-address@>=10.0.0 <10.7.1": 10.7.1
   "nanoid@>=3.0.0 <3.3.18": 3.3.18
   "postcss@>=8.0.0 <8.5.23": 8.5.23
+  "proxy-addr@>=1.1.0 <2.0.8": 2.0.8
   "qs@>=6.0.0 <6.16.0": 6.16.0
+  "source-map-js@>=1.0.0 <1.2.2": 1.2.2
 preferFrozenLockfile: true
 strictDepBuilds: true
