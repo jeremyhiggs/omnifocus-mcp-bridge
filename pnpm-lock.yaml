@@ -6,7 +6,7 @@ settings:
 
 overrides:
   '@hono/node-server@>=1.0.0 <2.1.3': 2.1.3
-  '@modelcontextprotocol/sdk@>=1.12.0 <1.31.0': 1.31.0
+  '@modelcontextprotocol/sdk@>=1.12.0 <1.32.0': 1.32.0
   fast-uri@>=3.0.0 <3.1.8: 3.1.8
   hono@>=4.0.0 <4.13.11: 4.13.11
   ip-address@>=10.0.0 <10.7.1: 10.7.1
@@ -15,14 +15,15 @@ overrides:
   proxy-addr@>=1.1.0 <2.0.8: 2.0.8
   qs@>=6.0.0 <6.16.0: 6.16.0
   source-map-js@>=1.0.0 <1.2.2: 1.2.2
+  vite@>=7.0.0 <7.3.7: 7.3.7
 
 importers:
 
   .:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: 1.31.0
-        version: 1.31.0(zod@3.25.76)
+        specifier: 1.32.0
+        version: 1.32.0(zod@3.25.76)
       dotenv:
         specifier: 17.4.2
         version: 17.4.2
@@ -47,7 +48,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@types/node@24.0.7)(vite@7.3.6(@types/node@24.0.7)(tsx@4.20.3))
+        version: 4.1.11(@types/node@24.0.7)(vite@7.3.7(@types/node@24.0.7)(tsx@4.20.3))
 
 packages:
 
@@ -429,8 +430,8 @@ packages:
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
 
-  '@modelcontextprotocol/sdk@1.31.0':
-    resolution: {integrity: sha512-UvTMgnNlnIBO/22ob2RcVGDlcvOslQs8T59+FTGdA0L27a39fdGF/EDETNtDVK4DZGpwomlsYpRdA8UXcVL/pw==}
+  '@modelcontextprotocol/sdk@1.32.0':
+    resolution: {integrity: sha512-8BviX/hK4Gd2eL1KdTwm0gfl4d3wdoErW0Jd00h6nomUAtk6IJk5vwQJc6kfWtJTzN5OEV/lgIiJKI8fiDGAlA==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -599,7 +600,7 @@ packages:
     resolution: {integrity: sha512-2XJVD55d1o5AZous5CCGKS74g/riOj9odEt2bQpCVZeblHyHdnMeFl4jl0XjU21stf4mbjUkew2eXQZt65g5CQ==}
     peerDependencies:
       msw: ^2.4.9
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
+      vite: 7.3.7
     peerDependenciesMeta:
       msw:
         optional: true
@@ -1087,8 +1088,8 @@ packages:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
 
-  vite@7.3.6:
-    resolution: {integrity: sha512-4XP60spRGjSZFf1qYH+dJIkK2znL3zQfl9KkOV9MkkRR/3Dls0dxaBsQPTloEc5BLXWPL9vsOxopxyKoMmDueg==}
+  vite@7.3.7:
+    resolution: {integrity: sha512-AHEzTORMbi7/7aXp7w7KZ5+DCUdSeLsJz0grY8xHpc9DHdYb0vQu6DqJfm2tOw3gDExNgPgnJTXxM6syYFHaCA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -1143,7 +1144,7 @@ packages:
       '@vitest/ui': 4.1.11
       happy-dom: '*'
       jsdom: '*'
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
+      vite: 7.3.7
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -1388,7 +1389,7 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
-  '@modelcontextprotocol/sdk@1.31.0(zod@3.25.76)':
+  '@modelcontextprotocol/sdk@1.32.0(zod@3.25.76)':
     dependencies:
       '@hono/node-server': 2.1.3(hono@4.13.11)
       ajv: 8.20.0
@@ -1509,13 +1510,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.1
 
-  '@vitest/mocker@4.1.11(vite@7.3.6(@types/node@24.0.7)(tsx@4.20.3))':
+  '@vitest/mocker@4.1.11(vite@7.3.7(@types/node@24.0.7)(tsx@4.20.3))':
     dependencies:
       '@vitest/spy': 4.1.11
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 7.3.6(@types/node@24.0.7)(tsx@4.20.3)
+      vite: 7.3.7(@types/node@24.0.7)(tsx@4.20.3)
 
   '@vitest/pretty-format@4.1.11':
     dependencies:
@@ -1869,7 +1870,7 @@ snapshots:
   omnifocus-mcp-enhanced@2.1.1(hono@4.13.11):
     dependencies:
       '@hono/node-server': 2.1.3(hono@4.13.11)
-      '@modelcontextprotocol/sdk': 1.31.0(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.32.0(zod@3.25.76)
       zod: 3.25.76
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -2075,7 +2076,7 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite@7.3.6(@types/node@24.0.7)(tsx@4.20.3):
+  vite@7.3.7(@types/node@24.0.7)(tsx@4.20.3):
     dependencies:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.4)
@@ -2088,10 +2089,10 @@ snapshots:
       fsevents: 2.3.3
       tsx: 4.20.3
 
-  vitest@4.1.11(@types/node@24.0.7)(vite@7.3.6(@types/node@24.0.7)(tsx@4.20.3)):
+  vitest@4.1.11(@types/node@24.0.7)(vite@7.3.7(@types/node@24.0.7)(tsx@4.20.3)):
     dependencies:
       '@vitest/expect': 4.1.11
-      '@vitest/mocker': 4.1.11(vite@7.3.6(@types/node@24.0.7)(tsx@4.20.3))
+      '@vitest/mocker': 4.1.11(vite@7.3.7(@types/node@24.0.7)(tsx@4.20.3))
       '@vitest/pretty-format': 4.1.11
       '@vitest/runner': 4.1.11
       '@vitest/snapshot': 4.1.11
@@ -2108,7 +2109,7 @@ snapshots:
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.1
-      vite: 7.3.6(@types/node@24.0.7)(tsx@4.20.3)
+      vite: 7.3.7(@types/node@24.0.7)(tsx@4.20.3)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 24.0.7
