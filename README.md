@@ -9,7 +9,7 @@ Serve is optional; the LaunchAgent stays local unless you enable it.
 ## First-time setup
 
 You need macOS with OmniFocus installed and automation access allowed, Node.js
-24+, and pnpm 11.28.0 to build. Tailscale is needed only if you enable Serve.
+24+, and pnpm 11.28.7 to build. Tailscale is needed only if you enable Serve.
 Run these commands from the checkout:
 
 ```sh
