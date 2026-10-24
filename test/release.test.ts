@@ -88,7 +88,30 @@ test("relocated release runs without dependencies and installation cleans old re
       }),
     );
     expect(client.getServerVersion()?.version).toBe(version);
-    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("dump_database");
+    const tools = (await client.listTools()).tools;
+    expect(tools.map((tool) => tool.name)).toContain("dump_database");
+    expect(tools.find((tool) => tool.name === "get_tasks")?.inputSchema).toMatchObject({
+      required: ["source"],
+      properties: {
+        source: { enum: ["inbox", "flagged", "forecast", "tag", "custom"] },
+      },
+    });
+    const invalidTaskRead = await client.callTool({
+      name: "get_tasks",
+      arguments: { source: "tag" },
+    });
+    expect(invalidTaskRead.isError).toBe(true);
+    expect(invalidTaskRead.content).toContainEqual({
+      type: "text",
+      text: expect.stringContaining("tagName is required when source is tag"),
+    });
+    await expect(
+      client.callTool({ name: "get_tasks", arguments: { source: "invalid" } }),
+    ).resolves.toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: expect.stringContaining("at source") }],
+    });
+    await expect(readFile(automationLog, "utf8")).rejects.toThrow();
     expect((await client.callTool({ name: "dump_database", arguments: {} })).isError).not.toBe(
       true,
     );
