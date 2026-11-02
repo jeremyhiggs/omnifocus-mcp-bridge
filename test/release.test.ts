@@ -1,4 +1,9 @@
-import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  execFile,
+  execFileSync,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createServer } from "node:net";
@@ -7,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { expect, test } from "vitest";
+import { promisify } from "node:util";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -66,7 +72,7 @@ test("relocated release runs without dependencies and installation cleans old re
         `const fs = require("node:fs");\n` +
         `const script = fs.readFileSync(process.argv.at(-1), "utf8");\n` +
         `fs.appendFileSync(${JSON.stringify(automationLog)}, script);\n` +
-        `console.log(JSON.stringify({ tasks: [], folders: {}, projects: {}, tags: {} }));\n`,
+        `console.log(JSON.stringify({ success: true, total: 0, byStatus: {}, tasks: [], folders: {}, projects: {}, tags: {} }));\n`,
       { mode: 0o755 },
     );
 
@@ -118,6 +124,14 @@ test("relocated release runs without dependencies and installation cleans old re
     expect(
       (await client.callTool({ name: "get_tasks", arguments: { source: "inbox" } })).isError,
     ).not.toBe(true);
+    const check = await promisify(execFile)(
+      path.join(release, "scripts/check-bridge.sh"),
+      [url.href],
+      { env, cwd: temp },
+    );
+    expect(check.stdout).toContain(version);
+    expect(check.stdout).toContain("PASS: count_tasks");
+    expect(check.stdout).not.toContain("Task Count");
     const scripts = await readFile(automationLog, "utf8");
     expect(scripts).toContain("Application('OmniFocus')");
     expect(scripts).toContain("omnifocusMcpTaskStatus");

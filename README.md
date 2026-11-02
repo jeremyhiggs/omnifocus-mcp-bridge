@@ -225,6 +225,61 @@ tailscale serve status --json
 lsof -nP -iTCP:3050 -sTCP:LISTEN
 ```
 
+## Restarting and testing the bridge
+
+After a Node.js upgrade, restart the bridge. A running bridge keeps the old Node process until it restarts.
+Homebrew can remove the old executable during cleanup, which can break macOS Automation access.
+The LaunchAgent can still show `running` while app reads fail.
+
+From this checkout, restart the installed service and test it:
+
+```sh
+pnpm launchd:restart
+pnpm bridge:test
+```
+
+The restart command restores the log directory and restarts only `local.omnifocus-mcp-bridge`.
+It uses the existing LaunchAgent and installed release. It does not rebuild or install the checkout.
+After restart, the command waits up to ten seconds for launchd to report `running`.
+Run `pnpm bridge:test` to check actual app access.
+
+The restart command uses:
+
+```sh
+launchctl kickstart -k "gui/$(id -u)/local.omnifocus-mcp-bridge"
+```
+
+If the new Node executable uses a different directory, run `pnpm launchd:install` again from that Node environment.
+The installer records the Node directory in the LaunchAgent's `PATH`.
+A stable Homebrew symlink can select the new version on restart.
+If macOS requests Automation access for the new Node version, approve access to OmniFocus.
+For error `-1743`, check System Settings > Privacy & Security > Automation.
+
+The live test checks unauthenticated HTTP `401`, authenticated MCP initialization, tool discovery, and a read-only OmniFocus call.
+It reports the running bridge version and exits with a nonzero status on error.
+Network checks share a 20-second timeout.
+It does not print the bearer token or app content. It does not create or edit app data.
+A `401` check alone does not prove that the bridge can control OmniFocus.
+
+The test uses the normal configuration precedence, including checkout `.env` overrides.
+Use the same `XDG_CONFIG_HOME`, host, port, and token configuration as the running service.
+An optional URL tests the Tailscale route with the same token:
+
+```sh
+pnpm bridge:test https://<mac-name>.<tailnet>.ts.net/omnifocus-mcp
+```
+
+Only use an endpoint you trust. The command sends your bridge token to that endpoint over HTTPS.
+Plain HTTP is accepted only for loopback addresses. Redirects are rejected.
+Run the test on the Mac that holds the private bridge configuration.
+
+An extracted release includes the same commands without pnpm or `node_modules`:
+
+```sh
+./scripts/restart-launch-agent.sh
+./scripts/check-bridge.sh
+```
+
 ## Development
 
 ```sh
