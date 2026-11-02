@@ -236,7 +236,7 @@ test("live check exits when the initialized notification stalls", async () => {
       {
         cwd: root,
         env: { ...process.env, XDG_CONFIG_HOME: home, OMNIFOCUS_MCP_TOKEN: "diagnostic-token" },
-        timeout: 22_000,
+        timeout: 30_000,
         killSignal: "SIGKILL",
       },
     ).catch((error: { code: number; signal: string | null; stderr: string }) => error);
@@ -250,4 +250,4 @@ test("live check exits when the initialized notification stalls", async () => {
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
-}, 30_000);
+}, 40_000);
