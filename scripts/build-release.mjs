@@ -33,7 +33,12 @@ for (const directory of ["dist", "upstream", "scripts", "launchd"]) {
 }
 const bridge = await build({
   ...options,
-  entryPoints: ["src/index.ts", "src/tailscale-start.ts", "src/generate-token.ts"],
+  entryPoints: [
+    "src/index.ts",
+    "src/tailscale-start.ts",
+    "src/generate-token.ts",
+    "src/check-bridge.ts",
+  ],
   outdir: path.join(output, "dist"),
 });
 const upstream = await build({
@@ -99,6 +104,7 @@ for (const file of [
   "dist/index.js",
   "dist/tailscale-start.js",
   "dist/generate-token.js",
+  "dist/check-bridge.js",
   "upstream/dist/server.js",
 ]) {
   hash.update(await readFile(path.join(output, file)));
