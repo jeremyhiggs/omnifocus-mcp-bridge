@@ -43,3 +43,5 @@ overrides:
   "zod@>=3.25.0 <4.6.6": 4.6.6
 preferFrozenLockfile: true
 strictDepBuilds: true
+trustPolicy: no-downgrade
+trustLockfile: false
