@@ -1,6 +1,6 @@
 {
   "name": "omnifocus-mcp-bridge",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Authenticated Streamable HTTP bridge for the omnifocus-mcp-enhanced stdio MCP server.",
@@ -26,9 +26,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "dotenv": "17.4.2",
-    "omnifocus-mcp-enhanced": "2.1.1"
+    "omnifocus-mcp-enhanced": "2.2.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.0",
@@ -41,5 +41,5 @@
   "engines": {
     "node": ">=24.0.0"
   },
-  "packageManager": "pnpm@11.28.7"
+  "packageManager": "pnpm@11.28.11"
 }
