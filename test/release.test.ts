@@ -45,7 +45,7 @@ test("relocated release runs without dependencies and installation cleans old re
     expect(await readdir(release)).not.toContain(".env");
     const notices = await readFile(path.join(release, "THIRD_PARTY_NOTICES.txt"), "utf8");
     expect(notices).toContain("@modelcontextprotocol/sdk@");
-    expect(notices).toContain("omnifocus-mcp-enhanced@2.1.1");
+    expect(notices).toContain("omnifocus-mcp-enhanced@2.2.0");
     expect(notices).not.toContain("undefined@");
     const env = {
       ...Object.fromEntries(
