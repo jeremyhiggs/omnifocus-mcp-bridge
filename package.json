@@ -1,6 +1,6 @@
 {
   "name": "omnifocus-mcp-bridge",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Authenticated Streamable HTTP bridge for the omnifocus-mcp-enhanced stdio MCP server.",
