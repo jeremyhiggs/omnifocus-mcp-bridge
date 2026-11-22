@@ -18,7 +18,6 @@ if [ ! -f "$ROOT_DIR/upstream/dist/server.js" ] || [ ! -f "$ROOT_DIR/dist/tailsc
 fi
 ROOT_DIR="$(CDPATH= cd -- "$ROOT_DIR" && pwd)"
 SOURCE_ROOT="$ROOT_DIR"
-TEMPLATE="$ROOT_DIR/launchd/$LABEL.plist.template"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SERVICE_DIR="$HOME/Library/Application Support/omnifocus-mcp-bridge"
 RELEASES_DIR="$SERVICE_DIR/releases"
@@ -28,7 +27,6 @@ STDERR_LOG="$LOG_DIR/err.log"
 GUI_DOMAIN="gui/$(id -u)"
 NODE_PATH=""
 TAILSCALE_PATH=""
-SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/omnifocus-mcp-bridge.sh"
 LAUNCHER_PATH=""
 SERVICE_PATH=""
 NEW_RELEASE=""
@@ -61,7 +59,18 @@ JS
 
 wait_for_service_removal() {
   attempts=0
-  while launchctl print "$GUI_DOMAIN/$LABEL" >/dev/null 2>&1; do
+  while :; do
+    status=0
+    launchctl print "$GUI_DOMAIN/$LABEL" >/dev/null 2>&1 || status=$?
+    case "$status" in
+      0) ;;
+      # launchctl can report an absent service as ESRCH or a launchd error.
+      3|113) return 0 ;;
+      *)
+        echo "Could not confirm $LABEL was unloaded (launchctl print exited $status)." >&2
+        return 1
+        ;;
+    esac
     attempts=$((attempts + 1))
     if [ "$attempts" -ge 10 ]; then
       echo "Timed out waiting for $LABEL to stop." >&2
@@ -152,6 +161,7 @@ fi
 
 TEMPLATE="$ROOT_DIR/launchd/$LABEL.plist.template"
 SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/omnifocus-mcp-bridge.sh"
+sh -n "$SOURCE_LAUNCHER_PATH"
 # Validate and choose the mode from the installed agent's working directory.
 TAILSCALE_SERVE="$(cd "$SERVICE_DIR" && env -i HOME="$HOME" PATH="$SERVICE_PATH" XDG_CONFIG_HOME="$CONFIG_HOME" node "$ROOT_DIR/dist/generate-token.js" --check-launch-agent)"
 if [ "$TAILSCALE_SERVE" = "true" ]; then
@@ -161,16 +171,17 @@ if [ "$TAILSCALE_SERVE" = "true" ]; then
 fi
 render_template > "$ROOT_DIR/launch-agent.plist"
 plutil -lint "$ROOT_DIR/launch-agent.plist" >/dev/null
-NEW_CONFIG=""
 
 mkdir -p "$HOME/Library/LaunchAgents" "$SERVICE_DIR" "$LOG_DIR"
+launchctl bootout "$GUI_DOMAIN/$LABEL" >/dev/null 2>&1 || true
+wait_for_service_removal
+
 cp "$SOURCE_LAUNCHER_PATH" "$LAUNCHER_PATH"
 chmod 755 "$LAUNCHER_PATH"
 cp "$ROOT_DIR/launch-agent.plist" "$PLIST"
 NEW_RELEASE=""
+NEW_CONFIG=""
 
-launchctl bootout "$GUI_DOMAIN/$LABEL" >/dev/null 2>&1 || true
-wait_for_service_removal
 bootstrap_launch_agent
 launchctl enable "$GUI_DOMAIN/$LABEL"
 launchctl kickstart -k "$GUI_DOMAIN/$LABEL"
@@ -197,3 +208,7 @@ echo "Release: $ROOT_DIR"
 echo "Plist: $PLIST"
 echo "Launcher: $LAUNCHER_PATH"
 echo "Logs:  $LOG_DIR"
+echo "If the Node.js executable changed, macOS may ask you to allow Automation access to OmniFocus."
+echo "Review access in System Settings > Privacy & Security > Automation."
+echo "Run pnpm bridge:test for an authenticated read-only OmniFocus check."
+echo "From an extracted release, run ./scripts/check-bridge.sh."
