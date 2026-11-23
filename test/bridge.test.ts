@@ -6,7 +6,6 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vite
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { DEFAULT_TOKEN_FILE, loadConfig } from "../src/config.js";
-import { filterToolsForPolicy } from "../src/policy.js";
 import { startBridge, type BridgeRuntime } from "../src/server.js";
 import { connectUpstream, type UpstreamConnection } from "../src/upstream.js";
 
@@ -260,57 +259,6 @@ describe("upstream child process", () => {
   });
 });
 
-describe("tool policy", () => {
-  test("advertises a narrowed read-only perspective contract", () => {
-    const [tool] = filterToolsForPolicy(
-      [
-        {
-          name: "manage_perspectives",
-          description: "List, inspect, and update perspectives",
-          inputSchema: {
-            type: "object",
-            properties: {
-              action: { type: "string", enum: ["list", "get", "update"] },
-              id: { type: "string" },
-              name: { type: "string" },
-              newName: { type: "string" },
-              rules: { type: "object" },
-              iconColor: { type: "string" },
-              dryRun: { type: "boolean" },
-            },
-            required: ["action"],
-            additionalProperties: false,
-          },
-          annotations: {
-            readOnlyHint: false,
-            destructiveHint: true,
-            idempotentHint: false,
-          },
-        },
-      ],
-      { readOnly: true },
-    );
-
-    expect(tool).toMatchObject({
-      description: expect.stringContaining("Read-only"),
-      inputSchema: {
-        properties: {
-          action: { enum: ["list", "get"] },
-        },
-      },
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-      },
-    });
-    expect(tool.inputSchema.properties).not.toHaveProperty("newName");
-    expect(tool.inputSchema.properties).not.toHaveProperty("rules");
-    expect(tool.inputSchema.properties).not.toHaveProperty("iconColor");
-    expect(tool.inputSchema.properties).not.toHaveProperty("dryRun");
-  });
-});
-
 describe("bridge server", () => {
   test("starts on the configured host and port", async () => {
     runtime = await startTestBridge();
@@ -372,9 +320,9 @@ describe("bridge server", () => {
     expect(perspectiveTool).toMatchObject({
       description: expect.stringContaining("Read-only"),
       inputSchema: {
-        properties: {
-          action: { enum: ["list", "get"] },
-        },
+        type: "object",
+        required: ["action"],
+        additionalProperties: false,
       },
       annotations: {
         readOnlyHint: true,
@@ -382,13 +330,14 @@ describe("bridge server", () => {
         idempotentHint: true,
       },
     });
-    expect(perspectiveTool?.inputSchema.properties).not.toHaveProperty("newName");
-    expect(perspectiveTool?.inputSchema.properties).not.toHaveProperty("rules");
-    expect(perspectiveTool?.inputSchema.properties).not.toHaveProperty("iconColor");
-    expect(perspectiveTool?.inputSchema.properties).not.toHaveProperty("dryRun");
+    expect(perspectiveTool?.inputSchema.properties).toEqual({
+      action: { type: "string", enum: ["list", "get"], description: expect.any(String) },
+      id: { type: "string" },
+      name: { type: "string" },
+    });
   });
 
-  test("forwards task IDs from the consolidated custom-perspective tool", async () => {
+  test("forwards the custom perspective selection and returns task IDs", async () => {
     runtime = await startTestBridge();
     const client = new Client({
       name: "bridge-smoke",
@@ -412,6 +361,7 @@ describe("bridge server", () => {
     });
     await client.close();
 
+    expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
       source: "custom",
       count: 1,
