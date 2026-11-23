@@ -41,15 +41,26 @@ Install and start the background service:
 
 ```sh
 pnpm launchd:install
-launchctl print "gui/$(id -u)/local.omnifocus-mcp-bridge"
+pnpm bridge:test
 ```
 
 The installer copies the standalone release into
 `~/Library/Application Support/omnifocus-mcp-bridge/releases/` and starts the
-LaunchAgent from that copy. It validates the private configuration before
-switching agents and removes older installed releases only after the new agent
-is running. The installed service needs Node.js, but neither pnpm nor
-`node_modules`.
+LaunchAgent from that copy. It validates the replacement launcher, plist, and
+private configuration before asking launchd to unload the current agent. It
+waits for removal before replacing the installed launcher and plist. If the
+wait times out or launchd cannot confirm removal, the installer keeps the
+existing files and release and removes the staged release and any config file
+migrated during the attempt. The installer removes older installed releases
+only after launchd reports the new agent running.
+The installed service uses the local Node.js executable and bundles its
+JavaScript dependencies.
+
+When the Node.js executable changes, macOS may ask for Automation consent
+again. If prompted, allow access to OmniFocus. For error `-1743`, review access
+in System Settings > Privacy & Security > Automation. Run `pnpm bridge:test`
+after installation to verify an authenticated read-only OmniFocus call.
+[Apple’s Automation settings guide](https://support.apple.com/en-au/guide/mac-help/mchl07817563/mac)
 
 ## Connect a client
 
@@ -171,8 +182,8 @@ the release folder survives rebuilds for direct runs, but is never copied into
 an installed release.
 
 After building a new release, run `pnpm launchd:install` again to update the
-background service. Compare these versions to see whether the installed agent
-needs updating:
+background service, then run `pnpm bridge:test`. Compare these versions to see
+whether the installed agent needs updating:
 
 ```sh
 node release/omnifocus-mcp-bridge/dist/index.js --version
@@ -192,7 +203,8 @@ An extracted archive can be run directly with Node from its folder:
 ```
 
 Install an extracted archive with `./scripts/install-launch-agent.sh`, or
-pass its folder to the checkout's installer. On migration, if `config.env`
+pass its folder to the checkout's installer. From the extracted release, run
+`./scripts/check-bridge.sh` to verify app access. On migration, if `config.env`
 does not exist, the installer copies a previous release's `.env` (or the
 source release's `.env`) into the private user config directory. It rejects
 inline tokens and release-local token paths; move those tokens to a separate
@@ -252,8 +264,7 @@ launchctl kickstart -k "gui/$(id -u)/local.omnifocus-mcp-bridge"
 If the new Node executable uses a different directory, run `pnpm launchd:install` again from that Node environment.
 The installer records the Node directory in the LaunchAgent's `PATH`.
 A stable Homebrew symlink can select the new version on restart.
-If macOS requests Automation access for the new Node version, approve access to OmniFocus.
-For error `-1743`, check System Settings > Privacy & Security > Automation.
+See [first-time setup](#first-time-setup) for Automation consent after an executable change.
 
 The live test checks unauthenticated HTTP `401`, authenticated MCP initialization, tool discovery, and a read-only OmniFocus call.
 It reports the running bridge version and exits with a nonzero status on error.

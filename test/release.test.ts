@@ -23,6 +23,8 @@ test("relocated release runs without dependencies and installation cleans old re
   const automationLog = path.join(temp, "automation.log");
   const launchLog = path.join(temp, "launch.log");
   const tailscaleLog = path.join(temp, "tailscale.log");
+  const oldLauncher = path.join(temp, "old-launcher");
+  const oldPlist = path.join(temp, "old-plist");
   let child: ChildProcessWithoutNullStreams | undefined;
   let client: Client | undefined;
   try {
@@ -61,9 +63,59 @@ test("relocated release runs without dependencies and installation cleans old re
     };
     // Fail if any release command attempts to rebuild or install dependencies.
     await writeFile(path.join(bin, "pnpm"), "#!/bin/sh\nexit 97\n", { mode: 0o755 });
+    await writeFile(path.join(bin, "sleep"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     await writeFile(
       path.join(bin, "launchctl"),
-      `#!/bin/sh\nprintf '%s\\n' "$*" >> '${launchLog}'\ncase "$1" in\n  print)\n    if [ -f '${path.join(temp, "launch.state")}' ]; then\n      if [ -f '${path.join(temp, "old-release")}' ] && [ -d "$(cat '${path.join(temp, "old-release")}')" ]; then\n        echo 'running-before-cleanup' >> '${launchLog}'\n      fi\n      echo 'state = running'\n    else\n      exit 1\n    fi ;;\n  bootout) rm -f '${path.join(temp, "launch.state")}' ;;\n  bootstrap) touch '${path.join(temp, "launch.state")}' ;;\nesac\n`,
+      `#!/bin/sh
+state='${path.join(temp, "launch.state")}'
+log='${launchLog}'
+exec 3>>"$log"
+echo "$*" >&3
+
+record_installed_files() {
+  if [ -f '${oldPlist}' ]; then
+    if cmp -s '${oldPlist}' "$HOME/Library/LaunchAgents/local.omnifocus-mcp-bridge.plist" &&
+       cmp -s '${oldLauncher}' "$HOME/Library/Application Support/omnifocus-mcp-bridge/omnifocus-mcp-bridge.sh"; then
+      echo "$1: old files" >&3
+    else
+      echo "$1: replaced files" >&3
+    fi
+  fi
+}
+
+case "$1" in
+  print)
+    [ -z "$PRINT_TEST_AGENT_STATUS" ] || exit "$PRINT_TEST_AGENT_STATUS"
+    case "$(cat "$state" 2>/dev/null)" in
+      removing)
+        record_installed_files 'still loaded'
+        rm "$state"
+        ;;
+      running)
+        if [ -f '${path.join(temp, "old-release")}' ] && [ -d "$(cat '${path.join(temp, "old-release")}')" ]; then
+          echo 'running-before-cleanup' >&3
+        fi
+        echo 'state = running'
+        ;;
+      *)
+        record_installed_files 'removal confirmed'
+        exit 113
+        ;;
+    esac
+    ;;
+  bootout)
+    record_installed_files 'bootout'
+    [ -f "$state" ] || exit 1
+    [ "$KEEP_TEST_AGENT_LOADED" != 1 ] || exit 1
+    echo removing > "$state"
+    ;;
+  bootstrap)
+    [ ! -f "$state" ] || exit 1
+    record_installed_files 'bootstrap'
+    echo running > "$state"
+    ;;
+esac
+`,
       { mode: 0o755 },
     );
     await writeFile(
@@ -196,18 +248,11 @@ test("relocated release runs without dependencies and installation cleans old re
     execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
     expect(await readFile(configFile, "utf8")).toBe("OMNIFOCUS_MCP_READ_ONLY=false\n");
     expect((await stat(configFile)).mode & 0o777).toBe(0o600);
-    const plist = await readFile(
-      path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist"),
-      "utf8",
-    );
+    const plistPath = path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist");
+    const plist = await readFile(plistPath, "utf8");
     const installedRelease = execFileSync(
       "plutil",
-      [
-        "-extract",
-        "EnvironmentVariables.OMNIFOCUS_MCP_BRIDGE_ROOT",
-        "raw",
-        path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist"),
-      ],
+      ["-extract", "EnvironmentVariables.OMNIFOCUS_MCP_BRIDGE_ROOT", "raw", plistPath],
       { env },
     )
       .toString()
@@ -226,7 +271,8 @@ test("relocated release runs without dependencies and installation cleans old re
       env.HOME,
       "Library/Application Support/omnifocus-mcp-bridge/omnifocus-mcp-bridge.sh",
     );
-    expect(await readFile(launcher, "utf8")).not.toContain("pnpm");
+    const installedLauncher = await readFile(launcher, "utf8");
+    expect(installedLauncher).not.toContain("pnpm");
     const reservation = createServer();
     await new Promise<void>((resolve) => reservation.listen(0, "127.0.0.1", resolve));
     const address = reservation.address();
@@ -252,16 +298,48 @@ test("relocated release runs without dependencies and installation cleans old re
     await rm(configFile);
     execFileSync(process.execPath, ["scripts/build-release.mjs", release], { cwd: root });
     await expect(stat(path.join(release, ".env"))).rejects.toThrow();
-    await writeFile(path.join(temp, "old-release"), installedRelease);
+    const oldReleaseRecord = path.join(temp, "old-release");
+    await writeFile(oldReleaseRecord, installedRelease);
+    await writeFile(oldLauncher, installedLauncher);
+    await writeFile(oldPlist, plist);
+    const replacementLauncher = `${installedLauncher}\n# Replacement launcher\n`;
+    await writeFile(path.join(release, "scripts/omnifocus-mcp-bridge.sh"), replacementLauncher);
+
+    for (const { printStatus, error } of [
+      { printStatus: "112", error: "launchctl print exited 112" },
+      { printStatus: "", error: "Timed out waiting" },
+    ]) {
+      await writeFile(launchLog, "");
+      await expect(
+        promisify(execFile)(path.join(release, "scripts/install-launch-agent.sh"), {
+          env: { ...env, KEEP_TEST_AGENT_LOADED: "1", PRINT_TEST_AGENT_STATUS: printStatus },
+          cwd: temp,
+        }),
+      ).rejects.toMatchObject({ stderr: expect.stringContaining(error) });
+      expect(await readFile(plistPath, "utf8")).toBe(plist);
+      expect(await readFile(launcher, "utf8")).toBe(installedLauncher);
+      expect(await readdir(path.dirname(installedRelease))).toEqual([
+        path.basename(installedRelease),
+      ]);
+      await expect(stat(configFile)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(launchLog, "utf8")).not.toMatch(/^bootstrap /m);
+    }
+
+    await writeFile(launchLog, "");
     execFileSync(path.join(release, "scripts/install-launch-agent.sh"), { env, cwd: temp });
+    expect((await readFile(launchLog, "utf8")).match(/^.+: (?:old|replaced) files$/gm)).toEqual([
+      "bootout: old files",
+      "still loaded: old files",
+      "removal confirmed: old files",
+      "bootstrap: replaced files",
+    ]);
+    expect(await readFile(launcher, "utf8")).toBe(replacementLauncher);
+    await rm(oldLauncher);
+    await rm(oldPlist);
+    await rm(oldReleaseRecord);
     const nextRelease = execFileSync(
       "plutil",
-      [
-        "-extract",
-        "EnvironmentVariables.OMNIFOCUS_MCP_BRIDGE_ROOT",
-        "raw",
-        path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist"),
-      ],
+      ["-extract", "EnvironmentVariables.OMNIFOCUS_MCP_BRIDGE_ROOT", "raw", plistPath],
       { env },
     )
       .toString()
@@ -281,7 +359,6 @@ test("relocated release runs without dependencies and installation cleans old re
 
     // Enabling Serve requires tailscale before the installer switches launchd.
     await writeFile(configFile, "OMNIFOCUS_MCP_TAILSCALE_SERVE=true\n");
-    const plistPath = path.join(env.HOME, "Library/LaunchAgents/local.omnifocus-mcp-bridge.plist");
     const previousPlist = await readFile(plistPath, "utf8");
     expect(() =>
       execFileSync(path.join(release, "scripts/install-launch-agent.sh"), {
